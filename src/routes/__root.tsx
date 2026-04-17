@@ -29,14 +29,18 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "SusCruit" },
+      { name: "description", content: "Suscruit helps job seekers detect fake recruiters and hiring scams." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "SusCruit" },
+      { property: "og:description", content: "Suscruit helps job seekers detect fake recruiters and hiring scams." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "SusCruit" },
+      { name: "twitter:description", content: "Suscruit helps job seekers detect fake recruiters and hiring scams." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/9e523134-19d0-46e8-9d8d-7acc45fc716e/id-preview-6dd6e69d--c318ce1f-d493-4f09-8bac-76cd5b4722c6.lovable.app-1776450363762.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/9e523134-19d0-46e8-9d8d-7acc45fc716e/id-preview-6dd6e69d--c318ce1f-d493-4f09-8bac-76cd5b4722c6.lovable.app-1776450363762.png" },
     ],
     links: [
       {
@@ -57,11 +61,6 @@ function RootShell({ children }: { children: React.ReactNode }) {
         <HeadContent />
       </head>
       <body>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('suscruit-theme');var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;if(d)document.documentElement.classList.add('dark');}catch(e){}})();`,
-          }}
-        />
         {children}
         <Scripts />
       </body>
