@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useRef, useState } from "react";
 import {
   Shield,
   ShieldAlert,
@@ -12,7 +13,10 @@ import {
   ListChecks,
   Info,
   Sparkles,
-  ChevronRight,
+  Volume2,
+  Square,
+  Loader2,
+  Accessibility,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -275,36 +279,8 @@ function Index() {
               </CardContent>
             </Card>
 
-            {/* What you'll get */}
-            <Card className="border-border/60 bg-card/60 backdrop-blur">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  What you'll get
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-              <SummaryRow
-                icon={<AlertTriangle className="h-4 w-4" />}
-                title="Risk assessment"
-                description="See if this looks safe, suspicious, or clearly a scam."
-              />
-              <SummaryRow
-                icon={<ListChecks className="h-4 w-4" />}
-                title="What we checked"
-                description="We analyze email headers, website details, and message patterns."
-              />
-              <SummaryRow
-                icon={<Info className="h-4 w-4" />}
-                title="Why we flagged it"
-                description="Simple explanations so you understand the warning signs."
-              />
-              <SummaryRow
-                icon={<Shield className="h-4 w-4" />}
-                title="Next steps"
-                description="Clear advice on what to do to stay safe."
-              />
-              </CardContent>
-            </Card>
+            {/* Listen to this analysis */}
+            <ListenCard />
           </aside>
         </div>
 
@@ -423,31 +399,108 @@ function Field({
   );
 }
 
-function SummaryRow({
-  icon,
-  title,
-  description,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-}) {
+function ListenCard() {
+  const [status, setStatus] = useState<"idle" | "loading" | "playing">("idle");
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const summary =
+    "Here is a spoken summary of your recruiter analysis. Once you run a check, this will read out the overall risk score, the risk category, the key signals we found in the email and message, why those signals matter for your safety, and the recommended next steps you can take to verify the recruiter or protect yourself.";
+
+  const stop = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current = null;
+    }
+    setStatus("idle");
+  };
+
+  const play = async () => {
+    try {
+      stop();
+      setStatus("loading");
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: summary }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        setStatus("idle");
+      };
+      audio.onerror = () => {
+        URL.revokeObjectURL(url);
+        setStatus("idle");
+      };
+      await audio.play();
+      setStatus("playing");
+    } catch (err) {
+      console.error("TTS error:", err);
+      setStatus("idle");
+    }
+  };
+
   return (
-    <div className="flex items-start gap-3 rounded-md border border-border/50 bg-background/40 p-2.5">
-      <span
-        className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-primary"
-        style={{ backgroundColor: "color-mix(in oklab, var(--primary) 14%, transparent)" }}
-      >
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-foreground">{title}</p>
-        <p className="text-xs text-muted-foreground">{description}</p>
-      </div>
-      <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground/50" />
-    </div>
+    <Card className="border-border/60 bg-card/85 shadow-[var(--shadow-elegant)] backdrop-blur">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+          <span
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-primary"
+            style={{ backgroundColor: "color-mix(in oklab, var(--primary) 14%, transparent)" }}
+          >
+            <Accessibility className="h-4 w-4" />
+          </span>
+          Listen to this analysis
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Listen to a spoken summary of your analysis. This feature is designed for
+          accessibility and powered by ElevenLabs.
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            onClick={play}
+            disabled={status === "loading"}
+            className="flex-1 text-primary-foreground shadow-[var(--shadow-glow)] hover:opacity-95 transition-opacity"
+            style={{ background: "var(--gradient-primary)" }}
+            aria-label="Play audio summary of the analysis"
+          >
+            {status === "loading" ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Generating…
+              </>
+            ) : (
+              <>
+                <Volume2 className="h-4 w-4" />
+                Read analysis aloud
+              </>
+            )}
+          </Button>
+          {status === "playing" && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={stop}
+              aria-label="Stop audio"
+            >
+              <Square className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
+
 
 function ResultCard({
   icon,
