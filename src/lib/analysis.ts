@@ -810,17 +810,22 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       const baseFindings = ["No message text was provided to analyze."];
       const baseSteps = ["Paste the recruiter's full message into the message field and run the analysis again."];
       if (domainCheck.finding) baseFindings.push(domainCheck.finding);
+      baseFindings.push(...headerAuth.findings);
       if (domainCheck.next_step) baseSteps.push(domainCheck.next_step);
-
+      headerAuth.nextSteps.forEach((s) => baseSteps.push(s));
       const noMsgNegative =
         domainCheck.status === "mismatch" ||
         domainCheck.status === "lookalike" ||
         domainCheck.status === "public_email";
 
       let noMsgScore = 0;
-      if (domainCheck.scoreDelta > 0) noMsgScore = Math.min(80, 15 + domainCheck.scoreDelta);
+      const authDelta = headerAuth.scoreDelta;
+      const authFloor = headerAuth.floor;
+      if (domainCheck.scoreDelta > 0 || authDelta > 0) {
+        noMsgScore = Math.min(85, 15 + domainCheck.scoreDelta + authDelta);
+      }
       if (domainCheck.floor > 0) noMsgScore = Math.max(noMsgScore, domainCheck.floor);
-      const noMsgLevel = levelFor(noMsgScore);
+      if (authFloor > 0) noMsgScore = Math.max(noMsgScore, authFloor);
 
       return {
         risk_score: noMsgScore,
@@ -865,6 +870,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     }
 
     score += scamScore + cautionScore;
+    score += headerAuth.scoreDelta;
 
     if (matchedScam.length >= 3) score += 6;
     if (matchedScam.length >= 5) score += 6;
@@ -878,7 +884,10 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       matchedScam.some((s) => s.weight >= 15) ||
       domainCheck.status === "mismatch" ||
       domainCheck.status === "lookalike" ||
-      domainCheck.status === "public_email";
+      domainCheck.status === "public_email" ||
+      headerAuth.dmarc === "fail" ||
+      headerAuth.spf === "fail" ||
+      headerAuth.dkim === "fail";
     const positiveCap = hasStrongRedFlag ? 5 : 18;
     const positiveDeduction = Math.min(positiveScore, positiveCap);
     score -= positiveDeduction;
