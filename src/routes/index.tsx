@@ -334,8 +334,9 @@ function Index() {
           />
         </section>
 
-        <footer className="mt-16 border-t border-border/60 pt-6 pb-4 text-center text-xs text-muted-foreground">
-          Suscruit · Built to protect job seekers
+        <footer className="mt-16 border-t border-border/60 pt-8 pb-6 text-center text-sm text-muted-foreground">
+          <p className="font-medium">Suscruit</p>
+          <p className="mt-1">Built to protect job seekers</p>
         </footer>
       </main>
     </div>
@@ -451,9 +452,9 @@ function ListenCard() {
   return (
     <Card className="border-border/60 bg-card/85 shadow-[var(--shadow-elegant)] backdrop-blur">
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+        <CardTitle className="flex items-center gap-2 text-base font-semibold">
           <span
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-primary"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-primary"
             style={{ backgroundColor: "color-mix(in oklab, var(--primary) 14%, transparent)" }}
           >
             <Accessibility className="h-4 w-4" />
@@ -462,7 +463,7 @@ function ListenCard() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <p className="text-xs leading-relaxed text-muted-foreground">
+        <p className="text-sm leading-relaxed text-muted-foreground">
           Listen to a spoken summary of your analysis. This feature is designed for
           accessibility and powered by ElevenLabs.
         </p>
