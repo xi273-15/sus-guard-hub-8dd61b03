@@ -838,7 +838,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (domainCheck.floor > 0) noMsgScore = Math.max(noMsgScore, domainCheck.floor);
       if (authFloor > 0) noMsgScore = Math.max(noMsgScore, authFloor);
 
-      const noMsgLevel = bandFor(noMsgScore);
+      const noMsgLevel = levelFor(noMsgScore);
 
       return {
         risk_score: noMsgScore,
