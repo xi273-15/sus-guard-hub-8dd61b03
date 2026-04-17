@@ -900,7 +900,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (domainCheck.floor > 0) {
       score = Math.max(score, domainCheck.floor);
     }
-
+    if (headerAuth.floor > 0) {
+      score = Math.max(score, headerAuth.floor);
+    }
     score = Math.max(0, Math.min(100, Math.round(score)));
     const level = levelFor(score);
 
