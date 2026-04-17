@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useRef, useState } from "react";
 import {
   Shield,
   ShieldAlert,
@@ -12,7 +13,10 @@ import {
   ListChecks,
   Info,
   Sparkles,
-  ChevronRight,
+  Volume2,
+  Square,
+  Loader2,
+  Accessibility,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -275,36 +279,8 @@ function Index() {
               </CardContent>
             </Card>
 
-            {/* What you'll get */}
-            <Card className="border-border/60 bg-card/60 backdrop-blur">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  What you'll get
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-              <SummaryRow
-                icon={<AlertTriangle className="h-4 w-4" />}
-                title="Risk assessment"
-                description="See if this looks safe, suspicious, or clearly a scam."
-              />
-              <SummaryRow
-                icon={<ListChecks className="h-4 w-4" />}
-                title="What we checked"
-                description="We analyze email headers, website details, and message patterns."
-              />
-              <SummaryRow
-                icon={<Info className="h-4 w-4" />}
-                title="Why we flagged it"
-                description="Simple explanations so you understand the warning signs."
-              />
-              <SummaryRow
-                icon={<Shield className="h-4 w-4" />}
-                title="Next steps"
-                description="Clear advice on what to do to stay safe."
-              />
-              </CardContent>
-            </Card>
+            {/* Listen to this analysis */}
+            <ListenCard />
           </aside>
         </div>
 
