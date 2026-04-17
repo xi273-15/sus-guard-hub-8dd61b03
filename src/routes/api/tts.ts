@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/api/tts")({
-  // @ts-expect-error - server route handlers
+  
   server: {
     handlers: {
       POST: async ({ request }: { request: Request }) => {
