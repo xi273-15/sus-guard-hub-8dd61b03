@@ -369,24 +369,172 @@ function buildWhyItMatters(
   return "We didn't find obvious scam signals in this message. That doesn't guarantee it's safe — always verify the recruiter through the official company website before sharing personal info.";
 }
 
+// ---------- Domain alignment helpers ----------
+// Common public email providers — sender domain matching these is not a company domain
+const PUBLIC_EMAIL_DOMAINS = new Set([
+  "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.uk", "ymail.com",
+  "hotmail.com", "outlook.com", "live.com", "msn.com", "aol.com",
+  "icloud.com", "me.com", "mac.com", "proton.me", "protonmail.com",
+  "gmx.com", "gmx.net", "mail.com", "zoho.com", "yandex.com", "yandex.ru",
+  "qq.com", "163.com", "126.com", "fastmail.com", "tutanota.com",
+]);
+
+// Multi-part public suffixes we want to preserve when extracting a "root" domain.
+// Not exhaustive, but covers the common cases we care about.
+const MULTI_PART_TLDS = new Set([
+  "co.uk", "ac.uk", "gov.uk", "org.uk", "me.uk",
+  "co.jp", "ac.jp", "or.jp", "ne.jp",
+  "com.au", "net.au", "org.au", "edu.au", "gov.au",
+  "co.nz", "net.nz", "org.nz",
+  "co.in", "net.in", "org.in",
+  "com.br", "com.mx", "com.ar", "com.sg", "com.hk", "com.tr", "com.tw",
+]);
+
+function extractEmailDomain(email: string): string | null {
+  const trimmed = email.trim().toLowerCase();
+  const m = trimmed.match(/^[^\s@]+@([a-z0-9.\-]+\.[a-z]{2,})$/);
+  if (!m) return null;
+  return m[1];
+}
+
+function normalizeCompanyDomain(input: string): string | null {
+  let s = input.trim().toLowerCase();
+  if (!s) return null;
+  // Strip protocol
+  s = s.replace(/^[a-z]+:\/\//, "");
+  // Strip path/query/hash
+  s = s.split("/")[0].split("?")[0].split("#")[0];
+  // Strip user@ if present
+  s = s.split("@").pop() ?? s;
+  // Strip leading www.
+  s = s.replace(/^www\./, "");
+  if (!/^[a-z0-9.\-]+\.[a-z]{2,}$/.test(s)) return null;
+  return s;
+}
+
+// Reduce a hostname to its registrable root, respecting common multi-part TLDs.
+function rootDomain(host: string): string {
+  const parts = host.split(".");
+  if (parts.length <= 2) return host;
+  const lastTwo = parts.slice(-2).join(".");
+  const lastThree = parts.slice(-3).join(".");
+  if (MULTI_PART_TLDS.has(lastTwo)) {
+    return parts.slice(-3).join(".");
+  }
+  // If the last-three already looks like x.co.uk style (handled above), fall through
+  void lastThree;
+  return lastTwo;
+}
+
+type DomainCheck = {
+  status: "match" | "subdomain" | "mismatch" | "public_email" | "unverifiable";
+  senderDomain: string | null;
+  companyDomain: string | null;
+  finding?: string;
+  reason?: string;
+  next_step?: string;
+  scoreDelta: number; // negative = lowers risk
+};
+
+function analyzeDomainAlignment(
+  recruiterEmail: string | undefined,
+  companyDomainInput: string | undefined,
+): DomainCheck {
+  const senderDomain = recruiterEmail ? extractEmailDomain(recruiterEmail) : null;
+  const companyDomain = companyDomainInput ? normalizeCompanyDomain(companyDomainInput) : null;
+
+  if (!senderDomain || !companyDomain) {
+    return {
+      status: "unverifiable",
+      senderDomain,
+      companyDomain,
+      finding:
+        "Domain alignment could not be verified — recruiter email or company website is missing or invalid.",
+      reason:
+        "Without both a valid recruiter email and a company website, we can't check whether the sender's domain matches the company they claim to represent.",
+      next_step:
+        "Ask the recruiter for an email on their company domain and confirm the company website on their official careers page.",
+      scoreDelta: 0,
+    };
+  }
+
+  const senderRoot = rootDomain(senderDomain);
+  const companyRoot = rootDomain(companyDomain);
+
+  if (PUBLIC_EMAIL_DOMAINS.has(senderDomain)) {
+    return {
+      status: "public_email",
+      senderDomain,
+      companyDomain,
+      finding: `Recruiter is writing from a personal email provider (${senderDomain}) instead of a ${companyRoot} address.`,
+      reason:
+        "Real recruiters almost always email from their company domain. A Gmail/Outlook/Yahoo address for a corporate role is a meaningful red flag.",
+      next_step: `Ask for an email on @${companyRoot} before sharing anything personal. If they refuse, treat the contact as suspicious.`,
+      scoreDelta: 14,
+    };
+  }
+
+  if (senderRoot === companyRoot) {
+    const exact = senderDomain === companyDomain;
+    return {
+      status: exact ? "match" : "subdomain",
+      senderDomain,
+      companyDomain,
+      finding: exact
+        ? `Recruiter email domain (${senderDomain}) matches the claimed company domain.`
+        : `Recruiter email domain (${senderDomain}) is a subdomain of the claimed company domain (${companyRoot}).`,
+      reason:
+        "When the sender's domain aligns with the company they claim to represent, it's consistent with legitimate recruiter outreach.",
+      next_step:
+        "Domain alignment is a good sign, but still verify the recruiter on the company's official careers or LinkedIn page.",
+      scoreDelta: -10,
+    };
+  }
+
+  return {
+    status: "mismatch",
+    senderDomain,
+    companyDomain,
+    finding: `Recruiter email domain (${senderDomain}) does not match the claimed company domain (${companyRoot}).`,
+    reason:
+      "When the sender's domain is unrelated to the company they claim to represent, it often indicates impersonation or a scam recruiter using a lookalike or unrelated address.",
+    next_step: `Don't share personal info. Verify the recruiter through the official ${companyRoot} careers page or LinkedIn before replying.`,
+    scoreDelta: 18,
+  };
+}
+
 export const analyzeRecruiter = createServerFn({ method: "POST" })
   .inputValidator((input: AnalysisInput) => input)
   .handler(async ({ data }): Promise<AnalysisResult> => {
     const message = (data.message ?? "").trim();
     const lower = message.toLowerCase();
+    const domainCheck = analyzeDomainAlignment(data.recruiterEmail, data.companyDomain);
 
     if (!message) {
+      const baseFindings = ["No message text was provided to analyze."];
+      const baseSteps = [
+        "Paste the recruiter's full message into the message field and run the analysis again.",
+      ];
+      if (domainCheck.finding) baseFindings.push(domainCheck.finding);
+      if (domainCheck.next_step) baseSteps.push(domainCheck.next_step);
+
+      let noMsgScore = 0;
+      if (domainCheck.scoreDelta > 0) noMsgScore = Math.min(49, 15 + domainCheck.scoreDelta);
+      const noMsgLevel = levelFor(noMsgScore);
+
       return {
-        risk_score: 0,
-        risk_level: "Low",
-        findings: ["No message text was provided to analyze."],
+        risk_score: noMsgScore,
+        risk_level: noMsgLevel,
+        findings: baseFindings,
         why_it_matters:
-          "Without the recruiter's message we can't check for scam wording. Paste their full message to get a real risk assessment.",
-        next_steps: [
-          "Paste the recruiter's full message into the message field and run the analysis again.",
-        ],
+          domainCheck.status === "mismatch" || domainCheck.status === "public_email"
+            ? `${domainCheck.reason} Paste the recruiter's full message to get a complete risk assessment.`
+            : "Without the recruiter's message we can't check for scam wording. Paste their full message to get a real risk assessment.",
+        next_steps: baseSteps,
         audio_summary:
-          "No message was provided. Paste the recruiter's full message to get a real risk assessment.",
+          domainCheck.status === "mismatch" || domainCheck.status === "public_email"
+            ? `${domainCheck.finding} Paste the recruiter's full message to get a complete risk assessment.`
+            : "No message was provided. Paste the recruiter's full message to get a real risk assessment.",
       };
     }
 
@@ -394,7 +542,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const matchedCaution: Signal[] = [];
     const matchedPositive: Signal[] = [];
 
-    let score = 10; // neutral base
+    let score = 10;
 
     for (const s of SCAM_SIGNALS) {
       if (s.test(lower, message)) {
@@ -415,18 +563,22 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       }
     }
 
-    // Stacking penalty: many independent scam flags compound
     if (matchedScam.length >= 3) score += 6;
     if (matchedScam.length >= 5) score += 6;
-
-    // Stacking bonus: multiple positives without scam signals reads very legitimate
     if (matchedScam.length === 0 && matchedPositive.length >= 3) score -= 6;
+
+    score += domainCheck.scoreDelta;
 
     score = Math.max(0, Math.min(100, Math.round(score)));
     const level = levelFor(score);
 
-    // Build findings: scam first, then caution, then a single combined positive line if any
+    const domainIsNegative =
+      domainCheck.status === "mismatch" || domainCheck.status === "public_email";
+    const domainIsPositive =
+      domainCheck.status === "match" || domainCheck.status === "subdomain";
+
     const findings: string[] = [];
+    if (domainIsNegative && domainCheck.finding) findings.push(domainCheck.finding);
     for (const m of matchedScam) findings.push(m.finding);
     for (const m of matchedCaution) findings.push(m.finding);
     if (matchedPositive.length) {
@@ -435,31 +587,45 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         .join("; ")}.`;
       findings.push(positiveSummary);
     }
+    if (domainIsPositive && domainCheck.finding) findings.push(domainCheck.finding);
+    if (domainCheck.status === "unverifiable" && domainCheck.finding && (data.recruiterEmail || data.companyDomain)) {
+      findings.push(domainCheck.finding);
+    }
     if (!findings.length) {
       findings.push("No common scam wording was detected in the message text.");
     }
 
-    // Next steps: prioritize scam steps, then caution, then a positive verification step
     const stepSet = new Set<string>();
+    if (domainIsNegative && domainCheck.next_step) stepSet.add(domainCheck.next_step);
     for (const m of matchedScam) stepSet.add(m.next_step);
     for (const m of matchedCaution) stepSet.add(m.next_step);
-    if (!matchedScam.length && !matchedCaution.length) {
+    if (!matchedScam.length && !matchedCaution.length && !domainIsNegative) {
       defaultNextSteps(level).forEach((s) => stepSet.add(s));
     }
     if (matchedPositive.length && stepSet.size < 5) {
       stepSet.add("Even with positive signals, confirm the role exists on the company's official careers page.");
     }
+    if (domainCheck.status === "unverifiable" && domainCheck.next_step && stepSet.size < 5 && (data.recruiterEmail || data.companyDomain)) {
+      stepSet.add(domainCheck.next_step);
+    }
     const next_steps = Array.from(stepSet).slice(0, 5);
 
-    const why_it_matters = buildWhyItMatters(
+    let why_it_matters = buildWhyItMatters(
       level,
       matchedScam.length,
       matchedCaution.length,
       matchedPositive.length,
     );
+    if (domainIsNegative) {
+      why_it_matters = `${domainCheck.reason} ${why_it_matters}`;
+    } else if (domainIsPositive) {
+      why_it_matters = `${why_it_matters} On the identity side, the sender's email domain aligns with the claimed company, which is consistent with legitimate outreach.`;
+    } else if (domainCheck.status === "unverifiable" && (data.recruiterEmail || data.companyDomain)) {
+      why_it_matters = `${why_it_matters} Note: we couldn't verify whether the sender's domain aligns with the claimed company.`;
+    }
 
     const summaryParts: string[] = [
-      `This recruiter message scored ${score} out of 100, which is ${level}.`,
+      `This recruiter check scored ${score} out of 100, which is ${level}.`,
     ];
     if (matchedScam.length) {
       summaryParts.push(
@@ -480,7 +646,12 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         `On the positive side, we found ${matchedPositive.length} legitimacy signal${matchedPositive.length === 1 ? "" : "s"}.`,
       );
     }
-    summaryParts.push(`Recommended next step: ${next_steps[0]}`);
+    if (domainIsNegative) {
+      summaryParts.push(domainCheck.finding!);
+    } else if (domainIsPositive) {
+      summaryParts.push("The sender's email domain aligns with the claimed company.");
+    }
+    if (next_steps[0]) summaryParts.push(`Recommended next step: ${next_steps[0]}`);
 
     return {
       risk_score: score,
