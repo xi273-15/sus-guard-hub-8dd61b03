@@ -426,15 +426,59 @@ function rootDomain(host: string): string {
   return lastTwo;
 }
 
+type DomainStatus =
+  | "match"
+  | "subdomain"
+  | "mismatch"
+  | "lookalike"
+  | "public_email"
+  | "unverifiable";
+
 type DomainCheck = {
-  status: "match" | "subdomain" | "mismatch" | "public_email" | "unverifiable";
+  status: DomainStatus;
   senderDomain: string | null;
   companyDomain: string | null;
   finding?: string;
   reason?: string;
   next_step?: string;
   scoreDelta: number; // negative = lowers risk
+  /** Minimum risk floor enforced by this domain finding. */
+  floor: number;
 };
+
+// Levenshtein distance for short strings (cheap, only used for root domains).
+function editDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  const m = a.length;
+  const n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const dp = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = tmp;
+    }
+  }
+  return dp[n];
+}
+
+function isLookalike(senderRoot: string, companyRoot: string): boolean {
+  if (!senderRoot || !companyRoot || senderRoot === companyRoot) return false;
+  const sName = senderRoot.split(".")[0];
+  const cName = companyRoot.split(".")[0];
+  if (!sName || !cName || cName.length < 4) return false;
+  // Substring tricks like "acme-inc", "acme-careers", "acmehr"
+  if (sName.includes(cName) || cName.includes(sName)) return true;
+  // Close typo (1-2 char edits) on a reasonably long name
+  const dist = editDistance(sName, cName);
+  if (cName.length >= 5 && dist > 0 && dist <= 2) return true;
+  return false;
+}
 
 function analyzeDomainAlignment(
   recruiterEmail: string | undefined,
@@ -455,6 +499,7 @@ function analyzeDomainAlignment(
       next_step:
         "Ask the recruiter for an email on their company domain and confirm the company website on their official careers page.",
       scoreDelta: 0,
+      floor: 0,
     };
   }
 
@@ -470,7 +515,8 @@ function analyzeDomainAlignment(
       reason:
         "Real recruiters almost always email from their company domain. A Gmail/Outlook/Yahoo address for a corporate role is a meaningful red flag.",
       next_step: `Ask for an email on @${companyRoot} before sharing anything personal. If they refuse, treat the contact as suspicious.`,
-      scoreDelta: 14,
+      scoreDelta: 28,
+      floor: 35,
     };
   }
 
@@ -488,6 +534,21 @@ function analyzeDomainAlignment(
       next_step:
         "Domain alignment is a good sign, but still verify the recruiter on the company's official careers or LinkedIn page.",
       scoreDelta: -10,
+      floor: 0,
+    };
+  }
+
+  if (isLookalike(senderRoot, companyRoot)) {
+    return {
+      status: "lookalike",
+      senderDomain,
+      companyDomain,
+      finding: `Recruiter email domain (${senderDomain}) looks like a lookalike of the claimed company domain (${companyRoot}).`,
+      reason:
+        "Lookalike domains (extra words, hyphens, or 1–2 character typos of the real company domain) are a classic impersonation tactic. A polished message does not change this.",
+      next_step: `Do not reply on this address. Verify the recruiter through the official ${companyRoot} careers page or LinkedIn, and only respond to a genuine @${companyRoot} address.`,
+      scoreDelta: 45,
+      floor: 55,
     };
   }
 
@@ -497,9 +558,10 @@ function analyzeDomainAlignment(
     companyDomain,
     finding: `Recruiter email domain (${senderDomain}) does not match the claimed company domain (${companyRoot}).`,
     reason:
-      "When the sender's domain is unrelated to the company they claim to represent, it often indicates impersonation or a scam recruiter using a lookalike or unrelated address.",
+      "When the sender's domain is unrelated to the company they claim to represent, it often indicates impersonation or a scam recruiter using an unrelated address. A professional-sounding message does not cancel this out.",
     next_step: `Don't share personal info. Verify the recruiter through the official ${companyRoot} careers page or LinkedIn before replying.`,
-    scoreDelta: 18,
+    scoreDelta: 35,
+    floor: 35,
   };
 }
 
@@ -518,23 +580,27 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (domainCheck.finding) baseFindings.push(domainCheck.finding);
       if (domainCheck.next_step) baseSteps.push(domainCheck.next_step);
 
+      const noMsgNegative =
+        domainCheck.status === "mismatch" ||
+        domainCheck.status === "lookalike" ||
+        domainCheck.status === "public_email";
+
       let noMsgScore = 0;
-      if (domainCheck.scoreDelta > 0) noMsgScore = Math.min(49, 15 + domainCheck.scoreDelta);
+      if (domainCheck.scoreDelta > 0) noMsgScore = Math.min(80, 15 + domainCheck.scoreDelta);
+      if (domainCheck.floor > 0) noMsgScore = Math.max(noMsgScore, domainCheck.floor);
       const noMsgLevel = levelFor(noMsgScore);
 
       return {
         risk_score: noMsgScore,
         risk_level: noMsgLevel,
         findings: baseFindings,
-        why_it_matters:
-          domainCheck.status === "mismatch" || domainCheck.status === "public_email"
-            ? `${domainCheck.reason} Paste the recruiter's full message to get a complete risk assessment.`
-            : "Without the recruiter's message we can't check for scam wording. Paste their full message to get a real risk assessment.",
+        why_it_matters: noMsgNegative
+          ? `${domainCheck.reason} Paste the recruiter's full message to get a complete risk assessment — but note that a polished message would not cancel a sender/company domain mismatch.`
+          : "Without the recruiter's message we can't check for scam wording. Paste their full message to get a real risk assessment.",
         next_steps: baseSteps,
-        audio_summary:
-          domainCheck.status === "mismatch" || domainCheck.status === "public_email"
-            ? `${domainCheck.finding} Paste the recruiter's full message to get a complete risk assessment.`
-            : "No message was provided. Paste the recruiter's full message to get a real risk assessment.",
+        audio_summary: noMsgNegative
+          ? `${domainCheck.finding} Paste the recruiter's full message to get a complete risk assessment.`
+          : "No message was provided. Paste the recruiter's full message to get a real risk assessment.",
       };
     }
 
@@ -543,37 +609,64 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const matchedPositive: Signal[] = [];
 
     let score = 10;
+    let scamScore = 0;
+    let cautionScore = 0;
+    let positiveScore = 0;
 
     for (const s of SCAM_SIGNALS) {
       if (s.test(lower, message)) {
         matchedScam.push(s);
-        score += s.weight;
+        scamScore += s.weight;
       }
     }
     for (const s of CAUTION_SIGNALS) {
       if (s.test(lower, message)) {
         matchedCaution.push(s);
-        score += s.weight;
+        cautionScore += s.weight;
       }
     }
     for (const s of POSITIVE_SIGNALS) {
       if (s.test(lower, message)) {
         matchedPositive.push(s);
-        score -= s.weight;
+        positiveScore += s.weight;
       }
     }
 
+    score += scamScore + cautionScore;
+
     if (matchedScam.length >= 3) score += 6;
     if (matchedScam.length >= 5) score += 6;
-    if (matchedScam.length === 0 && matchedPositive.length >= 3) score -= 6;
 
     score += domainCheck.scoreDelta;
+
+    // Cap how much positive wording can lower the score. Strong red flags
+    // (high-weight scam signals or domain mismatch/lookalike/public_email)
+    // must not be neutralized by a polished message.
+    const hasStrongRedFlag =
+      matchedScam.some((s) => s.weight >= 15) ||
+      domainCheck.status === "mismatch" ||
+      domainCheck.status === "lookalike" ||
+      domainCheck.status === "public_email";
+    const positiveCap = hasStrongRedFlag ? 5 : 18;
+    const positiveDeduction = Math.min(positiveScore, positiveCap);
+    score -= positiveDeduction;
+
+    if (matchedScam.length === 0 && !hasStrongRedFlag && matchedPositive.length >= 3) {
+      score -= 6;
+    }
+
+    // Enforce domain-driven minimum risk floor.
+    if (domainCheck.floor > 0) {
+      score = Math.max(score, domainCheck.floor);
+    }
 
     score = Math.max(0, Math.min(100, Math.round(score)));
     const level = levelFor(score);
 
     const domainIsNegative =
-      domainCheck.status === "mismatch" || domainCheck.status === "public_email";
+      domainCheck.status === "mismatch" ||
+      domainCheck.status === "lookalike" ||
+      domainCheck.status === "public_email";
     const domainIsPositive =
       domainCheck.status === "match" || domainCheck.status === "subdomain";
 
@@ -617,7 +710,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       matchedPositive.length,
     );
     if (domainIsNegative) {
-      why_it_matters = `${domainCheck.reason} ${why_it_matters}`;
+      why_it_matters = `${domainCheck.reason} A polished, professional-sounding message does not cancel a sender/company domain mismatch — scammers can and do write normal-sounding outreach. ${why_it_matters}`;
     } else if (domainIsPositive) {
       why_it_matters = `${why_it_matters} On the identity side, the sender's email domain aligns with the claimed company, which is consistent with legitimate outreach.`;
     } else if (domainCheck.status === "unverifiable" && (data.recruiterEmail || data.companyDomain)) {
