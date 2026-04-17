@@ -805,14 +805,6 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         result.nextSteps.push("Be cautious and verify the recruiter outside the email thread.");
         result.scoreDelta += 8;
       }
-      console.log("FINAL SCORE:", {
-        score,
-        level,
-        domainStatus: domainCheck.status,
-        domainDelta: domainCheck.scoreDelta,
-        domainFloor: domainCheck.floor,
-        findings,
-      });
 
       return result;
     }
@@ -918,6 +910,15 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     }
     score = Math.max(0, Math.min(100, Math.round(score)));
     const level = levelFor(score);
+    console.log("FINAL SCORE:", {
+      score,
+      level,
+      domainStatus: domainCheck.status,
+      domainDelta: domainCheck.scoreDelta,
+      domainFloor: domainCheck.floor,
+      headerAuthDelta: headerAuth.scoreDelta,
+      headerAuthFloor: headerAuth.floor,
+    });
 
     const domainIsNegative =
       domainCheck.status === "mismatch" || domainCheck.status === "lookalike" || domainCheck.status === "public_email";
@@ -925,7 +926,6 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
 
     const findings: string[] = [];
     if (domainIsNegative && domainCheck.finding) findings.push(domainCheck.finding);
-    headerAuth.nextSteps.forEach((s) => stepSet.add(s));
     for (const m of matchedScam) findings.push(m.finding);
     for (const m of matchedCaution) findings.push(m.finding);
     if (matchedPositive.length) {
@@ -944,6 +944,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
 
     const stepSet = new Set<string>();
     if (domainIsNegative && domainCheck.next_step) stepSet.add(domainCheck.next_step);
+    headerAuth.nextSteps.forEach((s) => stepSet.add(s));
     for (const m of matchedScam) stepSet.add(m.next_step);
     for (const m of matchedCaution) stepSet.add(m.next_step);
     if (!matchedScam.length && !matchedCaution.length && !domainIsNegative) {
