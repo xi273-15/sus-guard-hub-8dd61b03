@@ -912,6 +912,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
 
     const findings: string[] = [];
     if (domainIsNegative && domainCheck.finding) findings.push(domainCheck.finding);
+    headerAuth.nextSteps.forEach((s) => stepSet.add(s));
     for (const m of matchedScam) findings.push(m.finding);
     for (const m of matchedCaution) findings.push(m.finding);
     if (matchedPositive.length) {
@@ -955,6 +956,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       why_it_matters = `${why_it_matters} On the identity side, the sender's email domain aligns with the claimed company, which is consistent with legitimate outreach.`;
     } else if (domainCheck.status === "unverifiable" && (data.recruiterEmail || data.companyDomain)) {
       why_it_matters = `${why_it_matters} Note: we couldn't verify whether the sender's domain aligns with the claimed company.`;
+    }
+    if (headerAuth.reasons.length) {
+      why_it_matters = `${why_it_matters} ${headerAuth.reasons.join(" ")}`;
     }
 
     const summaryParts: string[] = [`This recruiter check scored ${score} out of 100, which is ${level}.`];
