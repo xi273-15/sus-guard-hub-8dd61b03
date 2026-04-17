@@ -499,6 +499,7 @@ function analyzeDomainAlignment(
       next_step:
         "Ask the recruiter for an email on their company domain and confirm the company website on their official careers page.",
       scoreDelta: 0,
+      floor: 0,
     };
   }
 
@@ -514,7 +515,8 @@ function analyzeDomainAlignment(
       reason:
         "Real recruiters almost always email from their company domain. A Gmail/Outlook/Yahoo address for a corporate role is a meaningful red flag.",
       next_step: `Ask for an email on @${companyRoot} before sharing anything personal. If they refuse, treat the contact as suspicious.`,
-      scoreDelta: 14,
+      scoreDelta: 28,
+      floor: 35,
     };
   }
 
@@ -532,6 +534,21 @@ function analyzeDomainAlignment(
       next_step:
         "Domain alignment is a good sign, but still verify the recruiter on the company's official careers or LinkedIn page.",
       scoreDelta: -10,
+      floor: 0,
+    };
+  }
+
+  if (isLookalike(senderRoot, companyRoot)) {
+    return {
+      status: "lookalike",
+      senderDomain,
+      companyDomain,
+      finding: `Recruiter email domain (${senderDomain}) looks like a lookalike of the claimed company domain (${companyRoot}).`,
+      reason:
+        "Lookalike domains (extra words, hyphens, or 1–2 character typos of the real company domain) are a classic impersonation tactic. A polished message does not change this.",
+      next_step: `Do not reply on this address. Verify the recruiter through the official ${companyRoot} careers page or LinkedIn, and only respond to a genuine @${companyRoot} address.`,
+      scoreDelta: 45,
+      floor: 55,
     };
   }
 
@@ -541,9 +558,10 @@ function analyzeDomainAlignment(
     companyDomain,
     finding: `Recruiter email domain (${senderDomain}) does not match the claimed company domain (${companyRoot}).`,
     reason:
-      "When the sender's domain is unrelated to the company they claim to represent, it often indicates impersonation or a scam recruiter using a lookalike or unrelated address.",
+      "When the sender's domain is unrelated to the company they claim to represent, it often indicates impersonation or a scam recruiter using an unrelated address. A professional-sounding message does not cancel this out.",
     next_step: `Don't share personal info. Verify the recruiter through the official ${companyRoot} careers page or LinkedIn before replying.`,
-    scoreDelta: 18,
+    scoreDelta: 35,
+    floor: 35,
   };
 }
 
