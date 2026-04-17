@@ -70,15 +70,18 @@ function Index() {
       {/* Top nav */}
       <nav className="sticky top-0 z-30 border-b border-border/60 bg-background/70 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-3">
             <span
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg shadow-[var(--shadow-glow)]"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl shadow-[var(--shadow-glow)]"
               style={{ background: "var(--gradient-primary)" }}
             >
-              <Shield className="h-4 w-4 text-primary-foreground" />
+              <Shield className="h-5 w-5 text-primary-foreground" />
             </span>
-            <span className="text-base font-semibold tracking-tight">Suscruit</span>
-            <span className="ml-2 hidden rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground sm:inline">
+            <div className="flex flex-col">
+              <span className="text-xl font-bold tracking-tight">Suscruit</span>
+              <span className="text-[11px] font-medium text-muted-foreground">Protecting job seekers</span>
+            </div>
+            <span className="ml-2 hidden rounded-md border border-border/60 bg-muted/40 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground sm:inline">
               Beta
             </span>
           </div>
@@ -95,11 +98,11 @@ function Index() {
           </span>
           Recruiter scam check
         </div>
-        <h1 className="mt-5 max-w-3xl text-4xl font-bold tracking-tight sm:text-6xl">
+        <h1 className="mt-5 max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl leading-[1.15]">
           Spot suspicious recruiters{" "}
           <span className="text-gradient-cyber">before they scam you.</span>
         </h1>
-        <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+        <p className="mt-5 max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
           Paste a recruiter's email or message and Suscruit checks it for the most common
           hiring scam signals — then explains what we found in plain language.
         </p>
