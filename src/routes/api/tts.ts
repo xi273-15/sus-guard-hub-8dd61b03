@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 export const Route = createFileRoute("/api/tts")({
   server: {
     handlers: {
-      POST: async ({ request }) => {
+      POST: async ({ request }: { request: Request }) => {
         const apiKey = process.env.ELEVENLABS_API_KEY;
         if (!apiKey) {
           return new Response("ELEVENLABS_API_KEY is not configured", { status: 500 });
