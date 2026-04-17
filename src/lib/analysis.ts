@@ -710,7 +710,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       matchedPositive.length,
     );
     if (domainIsNegative) {
-      why_it_matters = `${domainCheck.reason} ${why_it_matters}`;
+      why_it_matters = `${domainCheck.reason} A polished, professional-sounding message does not cancel a sender/company domain mismatch — scammers can and do write normal-sounding outreach. ${why_it_matters}`;
     } else if (domainIsPositive) {
       why_it_matters = `${why_it_matters} On the identity side, the sender's email domain aligns with the claimed company, which is consistent with legitimate outreach.`;
     } else if (domainCheck.status === "unverifiable" && (data.recruiterEmail || data.companyDomain)) {
