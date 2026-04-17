@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Shield, ShieldAlert, Search, FileText, Mail, Building2, Globe, User, AlertTriangle, ListChecks, Info, Sparkles } from "lucide-react";
+import { Shield, ShieldAlert, Search, FileText, Mail, Building2, Globe, User, AlertTriangle, ListChecks, Info, Sparkles, Lock, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -28,53 +29,74 @@ export const Route = createFileRoute("/")({
 
 function Index() {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="relative min-h-screen bg-background text-foreground">
+      {/* Ambient background */}
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-cyber-grid opacity-60" aria-hidden />
+      <div
+        className="pointer-events-none fixed inset-x-0 top-0 -z-10 h-[600px]"
+        style={{ background: "var(--gradient-hero)", opacity: 0.7 }}
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none fixed -top-40 left-1/2 -z-10 h-[500px] w-[800px] -translate-x-1/2 rounded-full blur-3xl"
+        style={{ background: "var(--gradient-primary)", opacity: 0.18 }}
+        aria-hidden
+      />
+
+      {/* Top bar */}
+      <div className="relative mx-auto flex max-w-5xl items-center justify-between px-6 pt-6">
+        <div className="flex items-center gap-2">
+          <span
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg shadow-[var(--shadow-glow)]"
+            style={{ background: "var(--gradient-primary)" }}
+          >
+            <Shield className="h-5 w-5 text-primary-foreground" />
+          </span>
+          <span className="font-mono text-sm tracking-widest text-muted-foreground">
+            SUSCRUIT<span className="text-primary">_</span>
+          </span>
+        </div>
+        <ThemeToggle />
+      </div>
+
       {/* Header */}
-      <header className="relative overflow-hidden border-b border-border">
-        <div
-          className="absolute inset-0 opacity-[0.07]"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 1px 1px, currentColor 1px, transparent 0)",
-            backgroundSize: "24px 24px",
-            color: "var(--brand)",
-          }}
-          aria-hidden
-        />
-        <div
-          className="absolute inset-0"
-          style={{ background: "var(--gradient-hero)", opacity: 0.04 }}
-          aria-hidden
-        />
-        <div className="relative mx-auto max-w-5xl px-6 py-16 sm:py-20">
-          <div className="flex items-center gap-2 text-sm font-medium text-primary">
-            <span
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg shadow-[var(--shadow-glow)]"
-              style={{ background: "var(--gradient-primary)" }}
-            >
-              <Shield className="h-5 w-5 text-primary-foreground" />
+      <header className="relative">
+        <div className="relative mx-auto max-w-5xl px-6 py-12 sm:py-16">
+          <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/40 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
             </span>
-            <span className="tracking-wide uppercase text-xs text-muted-foreground">
-              Recruiter Scam Detection
-            </span>
+            <span className="font-mono uppercase tracking-wider">Recruiter Threat Intel</span>
           </div>
-          <h1 className="mt-6 text-4xl font-bold tracking-tight text-foreground sm:text-6xl">
-            Suscruit
+          <h1 className="mt-6 text-5xl font-bold tracking-tight sm:text-7xl">
+            <span className="text-gradient-cyber">Suscruit</span>
           </h1>
-          <p className="mt-3 text-xl font-medium text-foreground/80 sm:text-2xl">
+          <p className="mt-4 max-w-2xl text-xl font-medium text-foreground/85 sm:text-2xl">
             Spot suspicious recruiters before they scam job seekers.
           </p>
           <p className="mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground">
-            Suscruit helps job seekers detect fake recruiters and hiring scams by analyzing
-            email authentication, domain intelligence, public web evidence, and scam
-            signals — all in one place.
+            Suscruit detects fake recruiters and hiring scams by analyzing email authentication,
+            domain intelligence, public web evidence, and scam signals — all in one place.
           </p>
+
+          <div className="mt-8 flex flex-wrap gap-2 font-mono text-xs">
+            <Chip icon={<Lock className="h-3 w-3" />}>SPF · DKIM · DMARC</Chip>
+            <Chip icon={<Globe className="h-3 w-3" />}>WHOIS · DNS</Chip>
+            <Chip icon={<Terminal className="h-3 w-3" />}>Header forensics</Chip>
+            <Chip icon={<ShieldAlert className="h-3 w-3" />}>Scam patterns</Chip>
+          </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-6 py-12 space-y-10">
+      <main className="mx-auto max-w-5xl px-6 pb-16 space-y-10">
         {/* Input Form */}
-        <Card className="shadow-[var(--shadow-elegant)] border-border/60">
+        <Card className="relative overflow-hidden border-border/60 bg-card/70 shadow-[var(--shadow-elegant)] backdrop-blur">
+          <div
+            className="pointer-events-none absolute inset-x-0 top-0 h-px"
+            style={{ background: "var(--gradient-primary)" }}
+            aria-hidden
+          />
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-2xl">
               <Search className="h-5 w-5 text-primary" />
@@ -122,11 +144,11 @@ function Index() {
               <Field
                 id="headers"
                 label="Raw Email Headers"
-                icon={<FileText className="h-4 w-4" />}
+                icon={<Terminal className="h-4 w-4" />}
               >
                 <Textarea
                   id="headers"
-                  placeholder="Paste the full raw email headers here..."
+                  placeholder="Received: from mail.example.com ..."
                   className="min-h-[160px] resize-y font-mono text-xs"
                 />
               </Field>
@@ -139,7 +161,7 @@ function Index() {
                   style={{ background: "var(--gradient-primary)" }}
                 >
                   <Sparkles className="h-4 w-4" />
-                  Analyze
+                  Run analysis
                 </Button>
               </div>
             </form>
@@ -148,13 +170,18 @@ function Index() {
 
         {/* Results */}
         <section aria-labelledby="results-heading" className="space-y-5">
-          <div>
-            <h2 id="results-heading" className="text-2xl font-semibold tracking-tight">
-              Analysis results
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              Submit the form above to see findings here.
-            </p>
+          <div className="flex items-end justify-between">
+            <div>
+              <h2 id="results-heading" className="text-2xl font-semibold tracking-tight">
+                Analysis results
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Submit the form above to see findings here.
+              </p>
+            </div>
+            <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
+              status: <span className="text-primary">idle</span>
+            </span>
           </div>
 
           <div className="grid gap-5 md:grid-cols-2">
@@ -162,7 +189,6 @@ function Index() {
               icon={<ShieldAlert className="h-5 w-5" />}
               title="Risk Score"
               description="A 0–100 score summarizing how risky this recruiter looks."
-              accent
             />
             <ResultCard
               icon={<AlertTriangle className="h-5 w-5" />}
@@ -188,11 +214,20 @@ function Index() {
           />
         </section>
 
-        <footer className="pt-6 pb-2 text-center text-xs text-muted-foreground">
-          Suscruit · Built to protect job seekers
+        <footer className="pt-6 pb-2 text-center font-mono text-xs text-muted-foreground">
+          // Suscruit · built to protect job seekers
         </footer>
       </main>
     </div>
+  );
+}
+
+function Chip({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-card/60 px-2.5 py-1 text-muted-foreground backdrop-blur">
+      <span className="text-primary">{icon}</span>
+      {children}
+    </span>
   );
 }
 
@@ -210,7 +245,7 @@ function Field({
   return (
     <div className="space-y-2">
       <Label htmlFor={id} className="flex items-center gap-2 text-sm font-medium">
-        <span className="text-muted-foreground">{icon}</span>
+        <span className="text-primary/80">{icon}</span>
         {label}
       </Label>
       {children}
@@ -222,24 +257,26 @@ function ResultCard({
   icon,
   title,
   description,
-  accent = false,
 }: {
   icon: React.ReactNode;
   title: string;
   description: string;
-  accent?: boolean;
 }) {
   return (
-    <Card
-      className={`border-dashed border-border/70 bg-muted/30 transition-colors hover:border-primary/40 ${
-        accent ? "md:row-span-1" : ""
-      }`}
-    >
+    <Card className="group relative overflow-hidden border-border/60 bg-card/50 backdrop-blur transition-colors hover:border-primary/50">
+      <div
+        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity group-hover:opacity-100"
+        style={{
+          background:
+            "radial-gradient(600px circle at 50% 0%, color-mix(in oklab, var(--primary) 10%, transparent), transparent 60%)",
+        }}
+        aria-hidden
+      />
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <span
             className="inline-flex h-8 w-8 items-center justify-center rounded-md text-primary"
-            style={{ backgroundColor: "color-mix(in oklab, var(--primary) 12%, transparent)" }}
+            style={{ backgroundColor: "color-mix(in oklab, var(--primary) 14%, transparent)" }}
           >
             {icon}
           </span>
@@ -247,8 +284,8 @@ function ResultCard({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="flex h-20 items-center justify-center rounded-md border border-dashed border-border/60 bg-background/60 text-sm text-muted-foreground">
-          Awaiting analysis
+        <div className="relative flex h-20 items-center justify-center overflow-hidden rounded-md border border-dashed border-border/60 bg-background/40 font-mono text-xs text-muted-foreground animate-scan">
+          <span className="animate-pulse-glow">awaiting_analysis...</span>
         </div>
         <p className="mt-3 text-xs text-muted-foreground">{description}</p>
       </CardContent>
