@@ -580,23 +580,27 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (domainCheck.finding) baseFindings.push(domainCheck.finding);
       if (domainCheck.next_step) baseSteps.push(domainCheck.next_step);
 
+      const noMsgNegative =
+        domainCheck.status === "mismatch" ||
+        domainCheck.status === "lookalike" ||
+        domainCheck.status === "public_email";
+
       let noMsgScore = 0;
-      if (domainCheck.scoreDelta > 0) noMsgScore = Math.min(49, 15 + domainCheck.scoreDelta);
+      if (domainCheck.scoreDelta > 0) noMsgScore = Math.min(80, 15 + domainCheck.scoreDelta);
+      if (domainCheck.floor > 0) noMsgScore = Math.max(noMsgScore, domainCheck.floor);
       const noMsgLevel = levelFor(noMsgScore);
 
       return {
         risk_score: noMsgScore,
         risk_level: noMsgLevel,
         findings: baseFindings,
-        why_it_matters:
-          domainCheck.status === "mismatch" || domainCheck.status === "public_email"
-            ? `${domainCheck.reason} Paste the recruiter's full message to get a complete risk assessment.`
-            : "Without the recruiter's message we can't check for scam wording. Paste their full message to get a real risk assessment.",
+        why_it_matters: noMsgNegative
+          ? `${domainCheck.reason} Paste the recruiter's full message to get a complete risk assessment — but note that a polished message would not cancel a sender/company domain mismatch.`
+          : "Without the recruiter's message we can't check for scam wording. Paste their full message to get a real risk assessment.",
         next_steps: baseSteps,
-        audio_summary:
-          domainCheck.status === "mismatch" || domainCheck.status === "public_email"
-            ? `${domainCheck.finding} Paste the recruiter's full message to get a complete risk assessment.`
-            : "No message was provided. Paste the recruiter's full message to get a real risk assessment.",
+        audio_summary: noMsgNegative
+          ? `${domainCheck.finding} Paste the recruiter's full message to get a complete risk assessment.`
+          : "No message was provided. Paste the recruiter's full message to get a real risk assessment.",
       };
     }
 
