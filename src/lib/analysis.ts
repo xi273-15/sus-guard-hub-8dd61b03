@@ -605,37 +605,64 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const matchedPositive: Signal[] = [];
 
     let score = 10;
+    let scamScore = 0;
+    let cautionScore = 0;
+    let positiveScore = 0;
 
     for (const s of SCAM_SIGNALS) {
       if (s.test(lower, message)) {
         matchedScam.push(s);
-        score += s.weight;
+        scamScore += s.weight;
       }
     }
     for (const s of CAUTION_SIGNALS) {
       if (s.test(lower, message)) {
         matchedCaution.push(s);
-        score += s.weight;
+        cautionScore += s.weight;
       }
     }
     for (const s of POSITIVE_SIGNALS) {
       if (s.test(lower, message)) {
         matchedPositive.push(s);
-        score -= s.weight;
+        positiveScore += s.weight;
       }
     }
 
+    score += scamScore + cautionScore;
+
     if (matchedScam.length >= 3) score += 6;
     if (matchedScam.length >= 5) score += 6;
-    if (matchedScam.length === 0 && matchedPositive.length >= 3) score -= 6;
 
     score += domainCheck.scoreDelta;
+
+    // Cap how much positive wording can lower the score. Strong red flags
+    // (high-weight scam signals or domain mismatch/lookalike/public_email)
+    // must not be neutralized by a polished message.
+    const hasStrongRedFlag =
+      matchedScam.some((s) => s.weight >= 15) ||
+      domainCheck.status === "mismatch" ||
+      domainCheck.status === "lookalike" ||
+      domainCheck.status === "public_email";
+    const positiveCap = hasStrongRedFlag ? 5 : 18;
+    const positiveDeduction = Math.min(positiveScore, positiveCap);
+    score -= positiveDeduction;
+
+    if (matchedScam.length === 0 && !hasStrongRedFlag && matchedPositive.length >= 3) {
+      score -= 6;
+    }
+
+    // Enforce domain-driven minimum risk floor.
+    if (domainCheck.floor > 0) {
+      score = Math.max(score, domainCheck.floor);
+    }
 
     score = Math.max(0, Math.min(100, Math.round(score)));
     const level = levelFor(score);
 
     const domainIsNegative =
-      domainCheck.status === "mismatch" || domainCheck.status === "public_email";
+      domainCheck.status === "mismatch" ||
+      domainCheck.status === "lookalike" ||
+      domainCheck.status === "public_email";
     const domainIsPositive =
       domainCheck.status === "match" || domainCheck.status === "subdomain";
 
