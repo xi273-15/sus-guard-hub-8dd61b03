@@ -691,6 +691,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const message = (data.message ?? "").trim();
     const lower = message.toLowerCase();
     const domainCheck = analyzeDomainAlignment(data.recruiterEmail, data.companyDomain);
+    console.log("INPUT DATA:", data);
+    console.log("DOMAIN CHECK:", domainCheck);
+    console.log("HEADERS:", data.headers);
     type HeaderAuthCheck = {
       spf: "pass" | "fail" | "softfail" | "none" | "unknown";
       dkim: "pass" | "fail" | "none" | "unknown";
@@ -802,6 +805,14 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         result.nextSteps.push("Be cautious and verify the recruiter outside the email thread.");
         result.scoreDelta += 8;
       }
+      console.log("FINAL SCORE:", {
+        score,
+        level,
+        domainStatus: domainCheck.status,
+        domainDelta: domainCheck.scoreDelta,
+        domainFloor: domainCheck.floor,
+        findings,
+      });
 
       return result;
     }
