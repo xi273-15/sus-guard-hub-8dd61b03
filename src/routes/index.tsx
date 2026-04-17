@@ -70,15 +70,18 @@ function Index() {
       {/* Top nav */}
       <nav className="sticky top-0 z-30 border-b border-border/60 bg-background/70 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-3">
             <span
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg shadow-[var(--shadow-glow)]"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl shadow-[var(--shadow-glow)]"
               style={{ background: "var(--gradient-primary)" }}
             >
-              <Shield className="h-4 w-4 text-primary-foreground" />
+              <Shield className="h-5 w-5 text-primary-foreground" />
             </span>
-            <span className="text-base font-semibold tracking-tight">Suscruit</span>
-            <span className="ml-2 hidden rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground sm:inline">
+            <div className="flex flex-col">
+              <span className="text-xl font-bold tracking-tight">Suscruit</span>
+              <span className="text-[11px] font-medium text-muted-foreground">Protecting job seekers</span>
+            </div>
+            <span className="ml-2 hidden rounded-md border border-border/60 bg-muted/40 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground sm:inline">
               Beta
             </span>
           </div>
@@ -95,11 +98,11 @@ function Index() {
           </span>
           Recruiter scam check
         </div>
-        <h1 className="mt-5 max-w-3xl text-4xl font-bold tracking-tight sm:text-6xl">
+        <h1 className="mt-5 max-w-3xl text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl leading-[1.15]">
           Spot suspicious recruiters{" "}
           <span className="text-gradient-cyber">before they scam you.</span>
         </h1>
-        <p className="mt-4 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+        <p className="mt-5 max-w-2xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
           Paste a recruiter's email or message and Suscruit checks it for the most common
           hiring scam signals — then explains what we found in plain language.
         </p>
@@ -113,11 +116,11 @@ function Index() {
               <CardHeader className="border-b border-border/60">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <CardTitle className="flex items-center gap-2 text-xl">
+                    <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
                       <Search className="h-5 w-5 text-primary" />
                       Check a recruiter
                     </CardTitle>
-                    <CardDescription className="mt-1">
+                    <CardDescription className="mt-1.5 text-sm sm:text-base">
                       Fill in what you have — even a single field helps.
                     </CardDescription>
                   </div>
@@ -331,8 +334,9 @@ function Index() {
           />
         </section>
 
-        <footer className="mt-16 border-t border-border/60 pt-6 pb-4 text-center text-xs text-muted-foreground">
-          Suscruit · Built to protect job seekers
+        <footer className="mt-16 border-t border-border/60 pt-8 pb-6 text-center text-sm text-muted-foreground">
+          <p className="font-medium">Suscruit</p>
+          <p className="mt-1">Built to protect job seekers</p>
         </footer>
       </main>
     </div>
@@ -351,15 +355,15 @@ function FormSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-4">
+    <section className="space-y-5">
       <div className="flex items-baseline gap-3">
-        <span className="text-xs font-semibold tracking-widest text-primary/80">
+        <span className="text-sm font-bold tracking-widest text-primary/90">
           {eyebrow}
         </span>
         <div>
-          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          <h3 className="text-base font-semibold text-foreground">{title}</h3>
           {description && (
-            <p className="text-xs text-muted-foreground">{description}</p>
+            <p className="text-sm text-muted-foreground">{description}</p>
           )}
         </div>
       </div>
@@ -384,17 +388,17 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <Label
         htmlFor={id}
-        className="flex items-center gap-1.5 text-xs font-medium text-foreground/90"
+        className="flex items-center gap-1.5 text-sm font-medium text-foreground"
       >
-        {icon && <span className="text-primary/70">{icon}</span>}
+        {icon && <span className="text-primary/80">{icon}</span>}
         {label}
         {required && <span className="text-primary">*</span>}
       </Label>
       {children}
-      {hint && <p className="text-[11px] leading-relaxed text-muted-foreground">{hint}</p>}
+      {hint && <p className="text-xs leading-relaxed text-muted-foreground">{hint}</p>}
     </div>
   );
 }
@@ -448,9 +452,9 @@ function ListenCard() {
   return (
     <Card className="border-border/60 bg-card/85 shadow-[var(--shadow-elegant)] backdrop-blur">
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+        <CardTitle className="flex items-center gap-2 text-base font-semibold">
           <span
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-primary"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-primary"
             style={{ backgroundColor: "color-mix(in oklab, var(--primary) 14%, transparent)" }}
           >
             <Accessibility className="h-4 w-4" />
@@ -459,7 +463,7 @@ function ListenCard() {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <p className="text-xs leading-relaxed text-muted-foreground">
+        <p className="text-sm leading-relaxed text-muted-foreground">
           Listen to a spoken summary of your analysis. This feature is designed for
           accessibility and powered by ElevenLabs.
         </p>
