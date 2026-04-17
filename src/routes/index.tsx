@@ -17,6 +17,7 @@ import {
   Square,
   Loader2,
   Accessibility,
+  CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,7 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { analyzeRecruiter, type AnalysisResult } from "@/lib/analysis";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -52,7 +54,65 @@ export const Route = createFileRoute("/")({
   }),
 });
 
+type FormState = {
+  recruiterName: string;
+  recruiterEmail: string;
+  companyName: string;
+  companyDomain: string;
+  message: string;
+  headers: string;
+};
+
+const initialForm: FormState = {
+  recruiterName: "",
+  recruiterEmail: "",
+  companyName: "",
+  companyDomain: "",
+  message: "",
+  headers: "",
+};
+
+function riskLevelClasses(level: AnalysisResult["risk_level"]) {
+  switch (level) {
+    case "Low":
+      return "text-emerald-500 border-emerald-500/30 bg-emerald-500/10";
+    case "Medium":
+      return "text-amber-500 border-amber-500/30 bg-amber-500/10";
+    case "High":
+      return "text-orange-500 border-orange-500/30 bg-orange-500/10";
+    case "Critical":
+      return "text-red-500 border-red-500/30 bg-red-500/10";
+  }
+}
+
 function Index() {
+  const [form, setForm] = useState<FormState>(initialForm);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const update = (k: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await analyzeRecruiter({ data: form });
+      setResult(res);
+      // Smooth scroll to results on small screens
+      requestAnimationFrame(() => {
+        document.getElementById("results-heading")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    } catch (err) {
+      console.error(err);
+      setError("Something went wrong while analyzing. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="relative min-h-screen bg-background text-foreground">
       {/* Ambient background */}
@@ -130,11 +190,7 @@ function Index() {
                 </div>
               </CardHeader>
 
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                }}
-              >
+              <form onSubmit={onSubmit}>
                 <CardContent className="space-y-8 pt-6">
                   {/* Section: Recruiter */}
                   <FormSection
@@ -148,7 +204,12 @@ function Index() {
                         label="Recruiter name"
                         icon={<User className="h-3.5 w-3.5" />}
                       >
-                        <Input id="recruiterName" placeholder="e.g. Jane Doe" />
+                        <Input
+                          id="recruiterName"
+                          placeholder="e.g. Jane Doe"
+                          value={form.recruiterName}
+                          onChange={update("recruiterName")}
+                        />
                       </Field>
                       <Field
                         id="recruiterEmail"
@@ -160,6 +221,8 @@ function Index() {
                           id="recruiterEmail"
                           type="email"
                           placeholder="jane@company.com"
+                          value={form.recruiterEmail}
+                          onChange={update("recruiterEmail")}
                         />
                       </Field>
                     </div>
@@ -179,14 +242,24 @@ function Index() {
                         label="Company name"
                         icon={<Building2 className="h-3.5 w-3.5" />}
                       >
-                        <Input id="companyName" placeholder="Acme Inc." />
+                        <Input
+                          id="companyName"
+                          placeholder="Acme Inc."
+                          value={form.companyName}
+                          onChange={update("companyName")}
+                        />
                       </Field>
                       <Field
                         id="companyDomain"
                         label="Company website"
                         icon={<Globe className="h-3.5 w-3.5" />}
                       >
-                        <Input id="companyDomain" placeholder="acme.com" />
+                        <Input
+                          id="companyDomain"
+                          placeholder="acme.com"
+                          value={form.companyDomain}
+                          onChange={update("companyDomain")}
+                        />
                       </Field>
                     </div>
                   </FormSection>
@@ -208,6 +281,8 @@ function Index() {
                         id="message"
                         placeholder="Paste the recruiter's message, DM, or job offer here..."
                         className="min-h-[140px] resize-y"
+                        value={form.message}
+                        onChange={update("message")}
                       />
                     </Field>
 
@@ -221,9 +296,20 @@ function Index() {
                         id="headers"
                         placeholder="Received: from mail.example.com ..."
                         className="min-h-[140px] resize-y font-mono text-xs"
+                        value={form.headers}
+                        onChange={update("headers")}
                       />
                     </Field>
                   </FormSection>
+
+                  {error && (
+                    <div
+                      role="alert"
+                      className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+                    >
+                      {error}
+                    </div>
+                  )}
                 </CardContent>
 
                 <div className="flex flex-col-reverse items-stretch justify-between gap-3 border-t border-border/60 px-6 py-4 sm:flex-row sm:items-center">
@@ -233,11 +319,21 @@ function Index() {
                   <Button
                     type="submit"
                     size="lg"
+                    disabled={loading}
                     className="text-primary-foreground shadow-[var(--shadow-glow)] hover:opacity-95 transition-opacity"
                     style={{ background: "var(--gradient-primary)" }}
                   >
-                    <Sparkles className="h-4 w-4" />
-                    Analyze recruiter
+                    {loading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Analyzing…
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4" />
+                        Analyze recruiter
+                      </>
+                    )}
                   </Button>
                 </div>
               </form>
@@ -258,20 +354,33 @@ function Index() {
                   <CardTitle className="text-sm font-medium text-muted-foreground">
                     Risk score
                   </CardTitle>
-                  <span className="rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                    Pending
+                  <span
+                    className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                      result
+                        ? riskLevelClasses(result.risk_level)
+                        : "border-border/60 bg-background/60 text-muted-foreground"
+                    }`}
+                  >
+                    {loading ? "Analyzing…" : result ? result.risk_level : "Pending"}
                   </span>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-baseline gap-2">
-                  <span className="text-5xl font-bold tracking-tight text-foreground/40">
-                    —
+                  <span
+                    className={`text-5xl font-bold tracking-tight ${
+                      result ? "text-foreground" : "text-foreground/40"
+                    }`}
+                  >
+                    {loading ? "…" : result ? result.risk_score : "—"}
                   </span>
                   <span className="text-sm text-muted-foreground">/ 100</span>
                 </div>
                 <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                  <div className="h-full w-0 bg-primary" />
+                  <div
+                    className="h-full bg-primary transition-all duration-500"
+                    style={{ width: `${result ? result.risk_score : 0}%` }}
+                  />
                 </div>
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>Low</span>
@@ -283,7 +392,7 @@ function Index() {
             </Card>
 
             {/* Listen to this analysis */}
-            <ListenCard />
+            <ListenCard summary={result?.audio_summary} />
           </aside>
         </div>
 
@@ -298,7 +407,11 @@ function Index() {
                 Detailed analysis
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Run a check above to populate this section.
+                {loading
+                  ? "Analyzing the recruiter…"
+                  : result
+                    ? "Here's what we found."
+                    : "Run a check above to populate this section."}
               </p>
             </div>
           </div>
@@ -306,24 +419,70 @@ function Index() {
           <div className="grid gap-5 md:grid-cols-2">
             <ResultCard
               icon={<ShieldAlert className="h-4 w-4" />}
-              title="Risk score breakdown"
-              description="See exactly what raised or lowered the score."
-            />
+              title="Risk score"
+              description="See exactly how concerning this recruiter looks."
+              loading={loading}
+              hasData={!!result}
+            >
+              {result && (
+                <div className="flex items-baseline gap-3">
+                  <span className="text-4xl font-bold tracking-tight">
+                    {result.risk_score}
+                  </span>
+                  <span className="text-sm text-muted-foreground">/ 100</span>
+                </div>
+              )}
+            </ResultCard>
+
             <ResultCard
               icon={<AlertTriangle className="h-4 w-4" />}
               title="Risk level"
               description="An at-a-glance label for how concerned you should be."
-            />
+              loading={loading}
+              hasData={!!result}
+            >
+              {result && (
+                <span
+                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold ${riskLevelClasses(result.risk_level)}`}
+                >
+                  <AlertTriangle className="h-4 w-4" />
+                  {result.risk_level}
+                </span>
+              )}
+            </ResultCard>
+
             <ResultCard
               icon={<ListChecks className="h-4 w-4" />}
               title="Findings"
               description="Signals from the email, domain, and message."
-            />
+              loading={loading}
+              hasData={!!result}
+            >
+              {result && (
+                <ul className="space-y-2">
+                  {result.findings.map((f, i) => (
+                    <li key={i} className="flex gap-2 text-sm leading-relaxed">
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </ResultCard>
+
             <ResultCard
               icon={<Info className="h-4 w-4" />}
               title="Why it matters"
               description="What each finding means for you, in plain English."
-            />
+              loading={loading}
+              hasData={!!result}
+            >
+              {result && (
+                <p className="text-sm leading-relaxed text-foreground/90">
+                  {result.why_it_matters}
+                </p>
+              )}
+            </ResultCard>
           </div>
 
           <ResultCard
@@ -331,7 +490,20 @@ function Index() {
             title="Recommended next steps"
             description="Clear, practical actions to verify the recruiter or protect yourself."
             full
-          />
+            loading={loading}
+            hasData={!!result}
+          >
+            {result && (
+              <ul className="space-y-2.5">
+                {result.next_steps.map((s, i) => (
+                  <li key={i} className="flex gap-2.5 text-sm leading-relaxed">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                    <span>{s}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </ResultCard>
         </section>
 
         <footer className="mt-16 border-t border-border/60 pt-8 pb-6 text-center text-sm text-muted-foreground">
@@ -403,11 +575,11 @@ function Field({
   );
 }
 
-function ListenCard() {
+function ListenCard({ summary }: { summary?: string }) {
   const [status, setStatus] = useState<"idle" | "loading" | "playing">("idle");
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const summary =
+  const fallback =
     "Here is a spoken summary of your recruiter analysis. Once you run a check, this will read out the overall risk score, the risk category, the key signals we found in the email and message, why those signals matter for your safety, and the recommended next steps you can take to verify the recruiter or protect yourself.";
 
   const stop = () => {
@@ -426,7 +598,7 @@ function ListenCard() {
       const res = await fetch("/api/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: summary }),
+        body: JSON.stringify({ text: summary || fallback }),
       });
       if (!res.ok) throw new Error(await res.text());
       const blob = await res.blob();
@@ -505,18 +677,24 @@ function ListenCard() {
   );
 }
 
-
 function ResultCard({
   icon,
   title,
   description,
   full,
+  loading,
+  hasData,
+  children,
 }: {
   icon: React.ReactNode;
   title: string;
   description: string;
   full?: boolean;
+  loading?: boolean;
+  hasData?: boolean;
+  children?: React.ReactNode;
 }) {
+  const status = loading ? "Analyzing" : hasData ? "Ready" : "Pending";
   return (
     <Card
       className={`group border-border/60 bg-card/60 backdrop-blur transition-colors hover:border-primary/40 ${
@@ -535,14 +713,24 @@ function ResultCard({
             {title}
           </CardTitle>
           <span className="rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            Pending
+            {status}
           </span>
         </div>
       </CardHeader>
       <CardContent className="pt-0">
-        <div className="flex h-20 items-center justify-center rounded-md border border-dashed border-border/60 bg-background/40 text-xs text-muted-foreground">
-          No data yet
-        </div>
+        {loading ? (
+          <div className="space-y-2">
+            <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
+            <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+            <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+          </div>
+        ) : hasData ? (
+          <div>{children}</div>
+        ) : (
+          <div className="flex h-20 items-center justify-center rounded-md border border-dashed border-border/60 bg-background/40 text-xs text-muted-foreground">
+            No data yet
+          </div>
+        )}
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{description}</p>
       </CardContent>
     </Card>
