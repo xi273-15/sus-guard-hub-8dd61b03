@@ -283,26 +283,26 @@ function Index() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <SummaryRow
-                  icon={<AlertTriangle className="h-4 w-4" />}
-                  title="Risk level"
-                  description="Low, medium, high, or critical."
-                />
-                <SummaryRow
-                  icon={<ListChecks className="h-4 w-4" />}
-                  title="What we found"
-                  description="Specific signals from the email and message."
-                />
-                <SummaryRow
-                  icon={<Info className="h-4 w-4" />}
-                  title="Why it matters"
-                  description="Plain-language explanation of each finding."
-                />
-                <SummaryRow
-                  icon={<Shield className="h-4 w-4" />}
-                  title="What to do next"
-                  description="Practical steps to verify or protect yourself."
-                />
+              <SummaryRow
+                icon={<AlertTriangle className="h-4 w-4" />}
+                title="Risk assessment"
+                description="See if this looks safe, suspicious, or clearly a scam."
+              />
+              <SummaryRow
+                icon={<ListChecks className="h-4 w-4" />}
+                title="What we checked"
+                description="We analyze email headers, website details, and message patterns."
+              />
+              <SummaryRow
+                icon={<Info className="h-4 w-4" />}
+                title="Why we flagged it"
+                description="Simple explanations so you understand the warning signs."
+              />
+              <SummaryRow
+                icon={<Shield className="h-4 w-4" />}
+                title="Next steps"
+                description="Clear advice on what to do to stay safe."
+              />
               </CardContent>
             </Card>
           </aside>
