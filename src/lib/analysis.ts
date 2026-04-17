@@ -733,76 +733,64 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         floor: 0,
       };
 
-      // SPF
+      // SPF — does this email actually come from the company it claims?
       if (/\bspf\s*=\s*pass\b/.test(lower) || /\bspf:\s*pass\b/.test(lower)) {
         result.spf = "pass";
       } else if (/\bspf\s*=\s*softfail\b/.test(lower)) {
         result.spf = "softfail";
-        result.findings.push("Email headers show SPF softfail.");
-        result.reasons.push("SPF softfail means the sender was not strongly authorized for the sending domain.");
-        result.nextSteps.push("Be cautious: ask the recruiter to resend from the official company email domain.");
+        result.findings.push("The email's sender check (SPF) only partially passed — the company didn't fully confirm this email came from them.");
+        result.reasons.push("Think of SPF like a guest list at the door. A 'softfail' means the sender's name isn't clearly on the company's approved list, so the email might not really be from who it says it is.");
+        result.nextSteps.push("Ask the recruiter to resend the message from their official company email address.");
         result.scoreDelta += 10;
         result.floor = Math.max(result.floor, 15);
       } else if (/\bspf\s*=\s*fail\b/.test(lower) || /\bspf:\s*fail\b/.test(lower)) {
         result.spf = "fail";
-        result.findings.push("Email headers show SPF fail.");
-        result.reasons.push("SPF fail suggests the sending server was not authorized to send mail for that domain.");
-        result.nextSteps.push("Do not trust the sender identity yet. Verify through the company's official website.");
+        result.findings.push("The email failed the sender check (SPF) — the company says this email did NOT come from their servers.");
+        result.reasons.push("This is like someone showing up claiming to be from a company, but that company's official 'guest list' says they never sent them. It's a strong sign the sender is faking their identity.");
+        result.nextSteps.push("Don't trust this sender. Go to the company's real website and contact them directly to check.");
         result.scoreDelta += 18;
         result.floor = Math.max(result.floor, 25);
       } else if (/\bspf\s*=\s*none\b/.test(lower)) {
         result.spf = "none";
-        result.findings.push("Email headers show no SPF result.");
-        result.reasons.push("Missing SPF makes sender-domain verification weaker.");
-        result.nextSteps.push(
-          "Ask the recruiter to resend from the official company domain or verify them independently.",
-        );
+        result.findings.push("No sender check (SPF) was found in the email — there's no proof of where it really came from.");
+        result.reasons.push("Legitimate companies usually set up SPF so you can confirm their emails are real. Without it, it's much easier for a scammer to pretend to be them.");
+        result.nextSteps.push("Ask the recruiter to send the message from the official company email, or verify them another way.");
         result.scoreDelta += 6;
       }
 
-      // DKIM
+      // DKIM — was the email tampered with on the way to you?
       if (/\bdkim\s*=\s*pass\b/.test(lower) || /\bdkim:\s*pass\b/.test(lower)) {
         result.dkim = "pass";
       } else if (/\bdkim\s*=\s*fail\b/.test(lower) || /\bdkim:\s*fail\b/.test(lower)) {
         result.dkim = "fail";
-        result.findings.push("Email headers show DKIM fail.");
-        result.reasons.push(
-          "DKIM fail means the message could not be cryptographically validated for the claimed signing domain.",
-        );
-        result.nextSteps.push(
-          "Treat the email cautiously and verify the recruiter through an official company channel.",
-        );
+        result.findings.push("The email's digital signature (DKIM) failed — the message may have been faked or changed.");
+        result.reasons.push("Real companies put a digital 'wax seal' on their emails. If the seal is broken or doesn't match, the email was either tampered with or wasn't really sent by that company.");
+        result.nextSteps.push("Treat this email as suspicious and contact the company through their official website to confirm.");
         result.scoreDelta += 16;
         result.floor = Math.max(result.floor, 25);
       } else if (/\bdkim\s*=\s*none\b/.test(lower)) {
         result.dkim = "none";
-        result.findings.push("Email headers show no DKIM result.");
-        result.reasons.push("Without DKIM, message authenticity is harder to verify.");
-        result.nextSteps.push("Verify the recruiter through the official company website before replying.");
+        result.findings.push("The email has no digital signature (DKIM) — there's no way to confirm it wasn't tampered with.");
+        result.reasons.push("Without that 'wax seal,' you can't be sure the email is genuine or that no one changed it before it reached you.");
+        result.nextSteps.push("Confirm the recruiter is real by reaching out through the company's official website.");
         result.scoreDelta += 6;
       }
 
-      // DMARC
+      // DMARC — does the company itself vouch for this email?
       if (/\bdmarc\s*=\s*pass\b/.test(lower) || /\bdmarc:\s*pass\b/.test(lower)) {
         result.dmarc = "pass";
       } else if (/\bdmarc\s*=\s*fail\b/.test(lower) || /\bdmarc:\s*fail\b/.test(lower)) {
         result.dmarc = "fail";
-        result.findings.push("Email headers show DMARC fail.");
-        result.reasons.push(
-          "DMARC fail is a strong phishing/spoofing warning because the message did not align with the domain's authentication policy.",
-        );
-        result.nextSteps.push(
-          "Do not trust this sender identity. Contact the company through its official careers page instead.",
-        );
+        result.findings.push("The email failed the company's anti-impersonation check (DMARC) — a strong warning sign of a fake or spoofed email.");
+        result.reasons.push("DMARC is the company's own rule that says 'only real emails from us should pass.' When it fails, it usually means someone is trying to impersonate the company to trick you.");
+        result.nextSteps.push("Do not trust this sender. Go to the company's official careers page and contact them directly instead.");
         result.scoreDelta += 22;
         result.floor = Math.max(result.floor, 35);
       } else if (/\bdmarc\s*=\s*none\b/.test(lower)) {
         result.dmarc = "none";
-        result.findings.push("Email headers show no DMARC result.");
-        result.reasons.push(
-          "Missing DMARC reduces confidence that the sender identity is aligned and protected from spoofing.",
-        );
-        result.nextSteps.push("Be cautious and verify the recruiter outside the email thread.");
+        result.findings.push("The company doesn't have anti-impersonation protection (DMARC) set up for this email — making it easier for scammers to fake.");
+        result.reasons.push("Without DMARC, scammers can more easily send emails that look like they're from this company. You can't rely on the sender's name alone.");
+        result.nextSteps.push("Be careful and double-check the recruiter through a separate, trusted channel — not by replying to this email.");
         result.scoreDelta += 8;
       }
 
