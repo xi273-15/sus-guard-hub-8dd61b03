@@ -910,6 +910,15 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     }
     score = Math.max(0, Math.min(100, Math.round(score)));
     const level = levelFor(score);
+    console.log("FINAL SCORE:", {
+      score,
+      level,
+      domainStatus: domainCheck.status,
+      domainDelta: domainCheck.scoreDelta,
+      domainFloor: domainCheck.floor,
+      headerAuthDelta: headerAuth.scoreDelta,
+      headerAuthFloor: headerAuth.floor,
+    });
 
     const domainIsNegative =
       domainCheck.status === "mismatch" || domainCheck.status === "lookalike" || domainCheck.status === "public_email";
