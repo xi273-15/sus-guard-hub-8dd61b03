@@ -369,11 +369,146 @@ function buildWhyItMatters(
   return "We didn't find obvious scam signals in this message. That doesn't guarantee it's safe — always verify the recruiter through the official company website before sharing personal info.";
 }
 
+// ---------- Domain alignment helpers ----------
+// Common public email providers — sender domain matching these is not a company domain
+const PUBLIC_EMAIL_DOMAINS = new Set([
+  "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.uk", "ymail.com",
+  "hotmail.com", "outlook.com", "live.com", "msn.com", "aol.com",
+  "icloud.com", "me.com", "mac.com", "proton.me", "protonmail.com",
+  "gmx.com", "gmx.net", "mail.com", "zoho.com", "yandex.com", "yandex.ru",
+  "qq.com", "163.com", "126.com", "fastmail.com", "tutanota.com",
+]);
+
+// Multi-part public suffixes we want to preserve when extracting a "root" domain.
+// Not exhaustive, but covers the common cases we care about.
+const MULTI_PART_TLDS = new Set([
+  "co.uk", "ac.uk", "gov.uk", "org.uk", "me.uk",
+  "co.jp", "ac.jp", "or.jp", "ne.jp",
+  "com.au", "net.au", "org.au", "edu.au", "gov.au",
+  "co.nz", "net.nz", "org.nz",
+  "co.in", "net.in", "org.in",
+  "com.br", "com.mx", "com.ar", "com.sg", "com.hk", "com.tr", "com.tw",
+]);
+
+function extractEmailDomain(email: string): string | null {
+  const trimmed = email.trim().toLowerCase();
+  const m = trimmed.match(/^[^\s@]+@([a-z0-9.\-]+\.[a-z]{2,})$/);
+  if (!m) return null;
+  return m[1];
+}
+
+function normalizeCompanyDomain(input: string): string | null {
+  let s = input.trim().toLowerCase();
+  if (!s) return null;
+  // Strip protocol
+  s = s.replace(/^[a-z]+:\/\//, "");
+  // Strip path/query/hash
+  s = s.split("/")[0].split("?")[0].split("#")[0];
+  // Strip user@ if present
+  s = s.split("@").pop() ?? s;
+  // Strip leading www.
+  s = s.replace(/^www\./, "");
+  if (!/^[a-z0-9.\-]+\.[a-z]{2,}$/.test(s)) return null;
+  return s;
+}
+
+// Reduce a hostname to its registrable root, respecting common multi-part TLDs.
+function rootDomain(host: string): string {
+  const parts = host.split(".");
+  if (parts.length <= 2) return host;
+  const lastTwo = parts.slice(-2).join(".");
+  const lastThree = parts.slice(-3).join(".");
+  if (MULTI_PART_TLDS.has(lastTwo)) {
+    return parts.slice(-3).join(".");
+  }
+  // If the last-three already looks like x.co.uk style (handled above), fall through
+  void lastThree;
+  return lastTwo;
+}
+
+type DomainCheck = {
+  status: "match" | "subdomain" | "mismatch" | "public_email" | "unverifiable";
+  senderDomain: string | null;
+  companyDomain: string | null;
+  finding?: string;
+  reason?: string;
+  next_step?: string;
+  scoreDelta: number; // negative = lowers risk
+};
+
+function analyzeDomainAlignment(
+  recruiterEmail: string | undefined,
+  companyDomainInput: string | undefined,
+): DomainCheck {
+  const senderDomain = recruiterEmail ? extractEmailDomain(recruiterEmail) : null;
+  const companyDomain = companyDomainInput ? normalizeCompanyDomain(companyDomainInput) : null;
+
+  if (!senderDomain || !companyDomain) {
+    return {
+      status: "unverifiable",
+      senderDomain,
+      companyDomain,
+      finding:
+        "Domain alignment could not be verified — recruiter email or company website is missing or invalid.",
+      reason:
+        "Without both a valid recruiter email and a company website, we can't check whether the sender's domain matches the company they claim to represent.",
+      next_step:
+        "Ask the recruiter for an email on their company domain and confirm the company website on their official careers page.",
+      scoreDelta: 0,
+    };
+  }
+
+  const senderRoot = rootDomain(senderDomain);
+  const companyRoot = rootDomain(companyDomain);
+
+  if (PUBLIC_EMAIL_DOMAINS.has(senderDomain)) {
+    return {
+      status: "public_email",
+      senderDomain,
+      companyDomain,
+      finding: `Recruiter is writing from a personal email provider (${senderDomain}) instead of a ${companyRoot} address.`,
+      reason:
+        "Real recruiters almost always email from their company domain. A Gmail/Outlook/Yahoo address for a corporate role is a meaningful red flag.",
+      next_step: `Ask for an email on @${companyRoot} before sharing anything personal. If they refuse, treat the contact as suspicious.`,
+      scoreDelta: 14,
+    };
+  }
+
+  if (senderRoot === companyRoot) {
+    const exact = senderDomain === companyDomain;
+    return {
+      status: exact ? "match" : "subdomain",
+      senderDomain,
+      companyDomain,
+      finding: exact
+        ? `Recruiter email domain (${senderDomain}) matches the claimed company domain.`
+        : `Recruiter email domain (${senderDomain}) is a subdomain of the claimed company domain (${companyRoot}).`,
+      reason:
+        "When the sender's domain aligns with the company they claim to represent, it's consistent with legitimate recruiter outreach.",
+      next_step:
+        "Domain alignment is a good sign, but still verify the recruiter on the company's official careers or LinkedIn page.",
+      scoreDelta: -10,
+    };
+  }
+
+  return {
+    status: "mismatch",
+    senderDomain,
+    companyDomain,
+    finding: `Recruiter email domain (${senderDomain}) does not match the claimed company domain (${companyRoot}).`,
+    reason:
+      "When the sender's domain is unrelated to the company they claim to represent, it often indicates impersonation or a scam recruiter using a lookalike or unrelated address.",
+    next_step: `Don't share personal info. Verify the recruiter through the official ${companyRoot} careers page or LinkedIn before replying.`,
+    scoreDelta: 18,
+  };
+}
+
 export const analyzeRecruiter = createServerFn({ method: "POST" })
   .inputValidator((input: AnalysisInput) => input)
   .handler(async ({ data }): Promise<AnalysisResult> => {
     const message = (data.message ?? "").trim();
     const lower = message.toLowerCase();
+    const domainCheck = analyzeDomainAlignment(data.recruiterEmail, data.companyDomain);
 
     if (!message) {
       return {
