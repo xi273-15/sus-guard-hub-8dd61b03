@@ -426,15 +426,59 @@ function rootDomain(host: string): string {
   return lastTwo;
 }
 
+type DomainStatus =
+  | "match"
+  | "subdomain"
+  | "mismatch"
+  | "lookalike"
+  | "public_email"
+  | "unverifiable";
+
 type DomainCheck = {
-  status: "match" | "subdomain" | "mismatch" | "public_email" | "unverifiable";
+  status: DomainStatus;
   senderDomain: string | null;
   companyDomain: string | null;
   finding?: string;
   reason?: string;
   next_step?: string;
   scoreDelta: number; // negative = lowers risk
+  /** Minimum risk floor enforced by this domain finding. */
+  floor: number;
 };
+
+// Levenshtein distance for short strings (cheap, only used for root domains).
+function editDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  const m = a.length;
+  const n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const dp = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = tmp;
+    }
+  }
+  return dp[n];
+}
+
+function isLookalike(senderRoot: string, companyRoot: string): boolean {
+  if (!senderRoot || !companyRoot || senderRoot === companyRoot) return false;
+  const sName = senderRoot.split(".")[0];
+  const cName = companyRoot.split(".")[0];
+  if (!sName || !cName || cName.length < 4) return false;
+  // Substring tricks like "acme-inc", "acme-careers", "acmehr"
+  if (sName.includes(cName) || cName.includes(sName)) return true;
+  // Close typo (1-2 char edits) on a reasonably long name
+  const dist = editDistance(sName, cName);
+  if (cName.length >= 5 && dist > 0 && dist <= 2) return true;
+  return false;
+}
 
 function analyzeDomainAlignment(
   recruiterEmail: string | undefined,
