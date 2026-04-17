@@ -76,11 +76,11 @@ function riskLevelClasses(level: AnalysisResult["risk_level"]) {
   switch (level) {
     case "Low":
       return "text-emerald-500 border-emerald-500/30 bg-emerald-500/10";
-    case "Medium":
+    case "Caution":
       return "text-amber-500 border-amber-500/30 bg-amber-500/10";
     case "High":
       return "text-orange-500 border-orange-500/30 bg-orange-500/10";
-    case "Critical":
+    case "Likely Scam":
       return "text-red-500 border-red-500/30 bg-red-500/10";
   }
 }
