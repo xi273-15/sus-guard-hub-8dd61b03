@@ -32,11 +32,9 @@ type Signal = {
   test: (lower: string, original: string) => boolean;
 };
 
-const hasAny = (text: string, terms: string[]) =>
-  terms.some((t) => text.includes(t));
+const hasAny = (text: string, terms: string[]) => terms.some((t) => text.includes(t));
 
-const hasWord = (text: string, words: string[]) =>
-  words.some((w) => new RegExp(`\\b${w}\\b`, "i").test(text));
+const hasWord = (text: string, words: string[]) => words.some((w) => new RegExp(`\\b${w}\\b`, "i").test(text));
 
 // ---------- Strong scam signals (raise score a lot) ----------
 const SCAM_SIGNALS: Signal[] = [
@@ -45,10 +43,8 @@ const SCAM_SIGNALS: Signal[] = [
     kind: "scam",
     weight: 12,
     finding: "Message uses urgency language (e.g. 'urgent', 'immediately', 'asap').",
-    reason:
-      "Scammers pressure targets to act fast so there is no time to verify the offer.",
-    next_step:
-      "Slow down. Legitimate recruiters are fine with you taking time to verify them.",
+    reason: "Scammers pressure targets to act fast so there is no time to verify the offer.",
+    next_step: "Slow down. Legitimate recruiters are fine with you taking time to verify them.",
     test: (l) =>
       hasWord(l, ["urgent", "urgently", "immediately", "asap"]) ||
       hasAny(l, ["as soon as possible", "right away", "act now", "act fast"]),
@@ -60,8 +56,7 @@ const SCAM_SIGNALS: Signal[] = [
     finding: "Message asks you to move the conversation to Telegram, WhatsApp, or Signal.",
     reason:
       "Real recruiters interview on company tools (Zoom, Teams, Google Meet). Off-platform chats hide the scammer's identity.",
-    next_step:
-      "Refuse to move to Telegram, WhatsApp, or Signal for interviews. Ask for a company email or video call.",
+    next_step: "Refuse to move to Telegram, WhatsApp, or Signal for interviews. Ask for a company email or video call.",
     test: (l) =>
       hasAny(l, ["telegram", "whatsapp", "signal app", "signal chat"]) ||
       (/\bsignal\b/.test(l) && hasAny(l, ["chat", "message", "interview", "contact"])),
@@ -75,8 +70,15 @@ const SCAM_SIGNALS: Signal[] = [
     next_step: "Do not send any money. Any request for payment from a recruiter is a scam.",
     test: (l) =>
       hasAny(l, [
-        "send payment", "pay a fee", "processing fee", "registration fee",
-        "training fee", "onboarding fee", "wire transfer", "western union", "moneygram",
+        "send payment",
+        "pay a fee",
+        "processing fee",
+        "registration fee",
+        "training fee",
+        "onboarding fee",
+        "wire transfer",
+        "western union",
+        "moneygram",
       ]),
   },
   {
@@ -84,15 +86,21 @@ const SCAM_SIGNALS: Signal[] = [
     kind: "scam",
     weight: 22,
     finding: "Message mentions cashing a check or buying equipment with funds you'll be sent.",
-    reason:
-      "This is the classic fake-check scam: the check bounces after you've already spent or forwarded the money.",
-    next_step:
-      "Do not deposit any check from this recruiter or buy equipment with funds they send you.",
+    reason: "This is the classic fake-check scam: the check bounces after you've already spent or forwarded the money.",
+    next_step: "Do not deposit any check from this recruiter or buy equipment with funds they send you.",
     test: (l) =>
       hasAny(l, [
-        "cash the check", "cash this check", "deposit the check", "deposit this check",
-        "purchase equipment", "buy equipment", "buy a laptop", "buy laptop",
-        "purchase a laptop", "home office equipment", "office setup",
+        "cash the check",
+        "cash this check",
+        "deposit the check",
+        "deposit this check",
+        "purchase equipment",
+        "buy equipment",
+        "buy a laptop",
+        "buy laptop",
+        "purchase a laptop",
+        "home office equipment",
+        "office setup",
       ]),
   },
   {
@@ -100,29 +108,43 @@ const SCAM_SIGNALS: Signal[] = [
     kind: "scam",
     weight: 22,
     finding: "Message mentions gift cards or cryptocurrency payments.",
-    reason:
-      "No legitimate employer pays salary or expenses in gift cards or crypto. This is a strong scam indicator.",
+    reason: "No legitimate employer pays salary or expenses in gift cards or crypto. This is a strong scam indicator.",
     next_step: "Do not buy gift cards or send crypto. Cut off contact if they insist.",
     test: (l) =>
       hasAny(l, [
-        "gift card", "gift cards", "itunes card", "amazon card", "google play card",
-        "bitcoin", "btc", "ethereum", "usdt", "crypto wallet", "cryptocurrency",
+        "gift card",
+        "gift cards",
+        "itunes card",
+        "amazon card",
+        "google play card",
+        "bitcoin",
+        "btc",
+        "ethereum",
+        "usdt",
+        "crypto wallet",
+        "cryptocurrency",
       ]),
   },
   {
     id: "sensitive_docs",
     kind: "scam",
     weight: 18,
-    finding:
-      "Message asks for sensitive personal info (SSN, ID, passport, or bank details) early in the process.",
-    reason:
-      "Real employers only collect this after a signed offer through an HR portal — not over chat or email.",
+    finding: "Message asks for sensitive personal info (SSN, ID, passport, or bank details) early in the process.",
+    reason: "Real employers only collect this after a signed offer through an HR portal — not over chat or email.",
     next_step:
       "Do not share your SSN, ID, passport, or bank info until you have a verified offer through the official company portal.",
     test: (l) =>
       hasAny(l, [
-        "social security", "ssn", "passport", "driver's license", "drivers license",
-        "bank account", "routing number", "account number", "copy of your id", "photo of your id",
+        "social security",
+        "ssn",
+        "passport",
+        "driver's license",
+        "drivers license",
+        "bank account",
+        "routing number",
+        "account number",
+        "copy of your id",
+        "photo of your id",
       ]),
   },
   {
@@ -135,10 +157,7 @@ const SCAM_SIGNALS: Signal[] = [
       "Compare the offered pay to the role on Glassdoor or LinkedIn. If it's far above market, treat it as a red flag.",
     test: (l) =>
       (/\$\s?\d{2,3}\s?\/?\s?(hr|hour|hourly)/.test(l) && /\$\s?([2-9]\d|\d{3})/.test(l)) ||
-      hasAny(l, [
-        "$5000 weekly", "$5,000 weekly", "earn up to",
-        "weekly pay of $", "no experience required and earn",
-      ]),
+      hasAny(l, ["$5000 weekly", "$5,000 weekly", "earn up to", "weekly pay of $", "no experience required and earn"]),
   },
   {
     id: "no_interview",
@@ -150,9 +169,13 @@ const SCAM_SIGNALS: Signal[] = [
     next_step: "Insist on a video interview with an identifiable employee before sharing anything.",
     test: (l) =>
       hasAny(l, [
-        "you have been hired", "you are hired", "you're hired",
-        "congratulations you have been selected", "no interview",
-        "without interview", "hired immediately",
+        "you have been hired",
+        "you are hired",
+        "you're hired",
+        "congratulations you have been selected",
+        "no interview",
+        "without interview",
+        "hired immediately",
       ]),
   },
   {
@@ -160,8 +183,7 @@ const SCAM_SIGNALS: Signal[] = [
     kind: "scam",
     weight: 5,
     finding: "Message uses scam-pattern wording like 'kindly'.",
-    reason:
-      "On its own this is mild, but 'kindly' combined with other red flags is common in recruiter scams.",
+    reason: "On its own this is mild, but 'kindly' combined with other red flags is common in recruiter scams.",
     next_step: "Treat as a minor signal — weigh it together with the other findings.",
     test: (l) => /\bkindly\b/.test(l),
   },
@@ -188,8 +210,12 @@ const CAUTION_SIGNALS: Signal[] = [
     next_step: "Ask for the exact job title, team, hiring manager, and a link to the official job posting.",
     test: (l, original) => {
       const vague = hasAny(l, [
-        "contract role", "remote opportunity", "great opportunity",
-        "exciting opportunity", "job opportunity", "work from home opportunity",
+        "contract role",
+        "remote opportunity",
+        "great opportunity",
+        "exciting opportunity",
+        "job opportunity",
+        "work from home opportunity",
       ]);
       if (!vague) return false;
       // Only flag if no concrete role keyword appears
@@ -201,13 +227,17 @@ const CAUTION_SIGNALS: Signal[] = [
     kind: "caution",
     weight: 6,
     finding: "Message asks for a quick reply (e.g. 'respond soon', 'get back to me today').",
-    reason:
-      "Mild pressure to respond fast isn't always a scam, but real recruiters usually give you time.",
+    reason: "Mild pressure to respond fast isn't always a scam, but real recruiters usually give you time.",
     next_step: "It's fine to take a day or two to verify the company and recruiter before replying.",
     test: (l) =>
       hasAny(l, [
-        "respond soon", "reply soon", "get back to me today", "get back to me asap",
-        "let me know today", "reply today", "respond today",
+        "respond soon",
+        "reply soon",
+        "get back to me today",
+        "get back to me asap",
+        "let me know today",
+        "reply today",
+        "respond today",
       ]),
   },
   {
@@ -215,7 +245,8 @@ const CAUTION_SIGNALS: Signal[] = [
     kind: "caution",
     weight: 8,
     finding: "Message is very short and lacks context about you, the role, or the company.",
-    reason: "Real outreach usually references your background or a specific opening. One-liners often signal mass outreach.",
+    reason:
+      "Real outreach usually references your background or a specific opening. One-liners often signal mass outreach.",
     next_step: "Ask for specifics: role, team, why they reached out to you, and a link to the job posting.",
     test: (_l, original) => original.trim().length < 80,
   },
@@ -228,8 +259,8 @@ const CAUTION_SIGNALS: Signal[] = [
     next_step: "Ask the recruiter to share the company name, role title, and where they found your profile.",
     test: (l) => {
       const hasRole = hasAny(l, ROLE_TERMS);
-      const hasCompany = /\b(at|with|for)\s+[A-Z][A-Za-z0-9&.\- ]{2,}/.test(l) ||
-        hasAny(l, ["our company", "our team", "our client"]);
+      const hasCompany =
+        /\b(at|with|for)\s+[A-Z][A-Za-z0-9&.\- ]{2,}/.test(l) || hasAny(l, ["our company", "our team", "our client"]);
       const hasContext = hasAny(l, RECRUITING_CONTEXT);
       return !hasRole && !hasCompany && !hasContext;
     },
@@ -238,31 +269,90 @@ const CAUTION_SIGNALS: Signal[] = [
 
 // ---------- Positive legitimacy signals (lower score) ----------
 const ROLE_TERMS = [
-  "engineer", "developer", "designer", "manager", "analyst", "scientist",
-  "architect", "consultant", "specialist", "lead", "director", "intern",
-  "marketing", "sales", "product manager", "data scientist", "software",
-  "frontend", "backend", "full stack", "fullstack", "devops", "qa", "recruiter",
+  "engineer",
+  "developer",
+  "designer",
+  "manager",
+  "analyst",
+  "scientist",
+  "architect",
+  "consultant",
+  "specialist",
+  "lead",
+  "director",
+  "intern",
+  "marketing",
+  "sales",
+  "product manager",
+  "data scientist",
+  "software",
+  "frontend",
+  "backend",
+  "full stack",
+  "fullstack",
+  "devops",
+  "qa",
+  "recruiter",
 ];
 
 const RECRUITING_CONTEXT = [
-  "your profile", "your background", "your experience", "your linkedin",
-  "your github", "your resume", "your cv", "saw your", "came across your",
-  "reached out", "open role", "open position", "hiring", "we're hiring",
-  "job description", "job posting", "jd", "interview process", "hiring manager",
-  "team is growing", "headcount",
+  "your profile",
+  "your background",
+  "your experience",
+  "your linkedin",
+  "your github",
+  "your resume",
+  "your cv",
+  "saw your",
+  "came across your",
+  "reached out",
+  "open role",
+  "open position",
+  "hiring",
+  "we're hiring",
+  "job description",
+  "job posting",
+  "jd",
+  "interview process",
+  "hiring manager",
+  "team is growing",
+  "headcount",
 ];
 
 const NEXT_STEP_TERMS = [
-  "schedule a call", "schedule a chat", "book a call", "book some time",
-  "calendly", "set up a call", "set up a chat", "30 minute call", "30-minute call",
-  "introductory call", "intro call", "phone screen", "screening call",
-  "video interview", "zoom", "google meet", "microsoft teams", "ms teams",
-  "available next week", "available this week", "let me know your availability",
+  "schedule a call",
+  "schedule a chat",
+  "book a call",
+  "book some time",
+  "calendly",
+  "set up a call",
+  "set up a chat",
+  "30 minute call",
+  "30-minute call",
+  "introductory call",
+  "intro call",
+  "phone screen",
+  "screening call",
+  "video interview",
+  "zoom",
+  "google meet",
+  "microsoft teams",
+  "ms teams",
+  "available next week",
+  "available this week",
+  "let me know your availability",
 ];
 
 const PROFESSIONAL_SIGNOFFS = [
-  "best regards", "kind regards", "regards,", "thanks,", "thank you,",
-  "looking forward", "best,", "cheers,", "sincerely,",
+  "best regards",
+  "kind regards",
+  "regards,",
+  "thanks,",
+  "thank you,",
+  "looking forward",
+  "best,",
+  "cheers,",
+  "sincerely,",
 ];
 
 const POSITIVE_SIGNALS: Signal[] = [
@@ -333,12 +423,7 @@ function defaultNextSteps(level: RiskLevel): string[] {
   return base;
 }
 
-function buildWhyItMatters(
-  level: RiskLevel,
-  scamCount: number,
-  cautionCount: number,
-  positiveCount: number,
-): string {
+function buildWhyItMatters(level: RiskLevel, scamCount: number, cautionCount: number, positiveCount: number): string {
   const negCount = scamCount + cautionCount;
 
   if (level === "Likely Scam") {
@@ -372,22 +457,64 @@ function buildWhyItMatters(
 // ---------- Domain alignment helpers ----------
 // Common public email providers — sender domain matching these is not a company domain
 const PUBLIC_EMAIL_DOMAINS = new Set([
-  "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.uk", "ymail.com",
-  "hotmail.com", "outlook.com", "live.com", "msn.com", "aol.com",
-  "icloud.com", "me.com", "mac.com", "proton.me", "protonmail.com",
-  "gmx.com", "gmx.net", "mail.com", "zoho.com", "yandex.com", "yandex.ru",
-  "qq.com", "163.com", "126.com", "fastmail.com", "tutanota.com",
+  "gmail.com",
+  "googlemail.com",
+  "yahoo.com",
+  "yahoo.co.uk",
+  "ymail.com",
+  "hotmail.com",
+  "outlook.com",
+  "live.com",
+  "msn.com",
+  "aol.com",
+  "icloud.com",
+  "me.com",
+  "mac.com",
+  "proton.me",
+  "protonmail.com",
+  "gmx.com",
+  "gmx.net",
+  "mail.com",
+  "zoho.com",
+  "yandex.com",
+  "yandex.ru",
+  "qq.com",
+  "163.com",
+  "126.com",
+  "fastmail.com",
+  "tutanota.com",
 ]);
 
 // Multi-part public suffixes we want to preserve when extracting a "root" domain.
 // Not exhaustive, but covers the common cases we care about.
 const MULTI_PART_TLDS = new Set([
-  "co.uk", "ac.uk", "gov.uk", "org.uk", "me.uk",
-  "co.jp", "ac.jp", "or.jp", "ne.jp",
-  "com.au", "net.au", "org.au", "edu.au", "gov.au",
-  "co.nz", "net.nz", "org.nz",
-  "co.in", "net.in", "org.in",
-  "com.br", "com.mx", "com.ar", "com.sg", "com.hk", "com.tr", "com.tw",
+  "co.uk",
+  "ac.uk",
+  "gov.uk",
+  "org.uk",
+  "me.uk",
+  "co.jp",
+  "ac.jp",
+  "or.jp",
+  "ne.jp",
+  "com.au",
+  "net.au",
+  "org.au",
+  "edu.au",
+  "gov.au",
+  "co.nz",
+  "net.nz",
+  "org.nz",
+  "co.in",
+  "net.in",
+  "org.in",
+  "com.br",
+  "com.mx",
+  "com.ar",
+  "com.sg",
+  "com.hk",
+  "com.tr",
+  "com.tw",
 ]);
 
 function extractEmailDomain(email: string): string | null {
@@ -426,13 +553,7 @@ function rootDomain(host: string): string {
   return lastTwo;
 }
 
-type DomainStatus =
-  | "match"
-  | "subdomain"
-  | "mismatch"
-  | "lookalike"
-  | "public_email"
-  | "unverifiable";
+type DomainStatus = "match" | "subdomain" | "mismatch" | "lookalike" | "public_email" | "unverifiable";
 
 type DomainCheck = {
   status: DomainStatus;
@@ -492,8 +613,7 @@ function analyzeDomainAlignment(
       status: "unverifiable",
       senderDomain,
       companyDomain,
-      finding:
-        "Domain alignment could not be verified — recruiter email or company website is missing or invalid.",
+      finding: "Domain alignment could not be verified — recruiter email or company website is missing or invalid.",
       reason:
         "Without both a valid recruiter email and a company website, we can't check whether the sender's domain matches the company they claim to represent.",
       next_step:
@@ -571,12 +691,124 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const message = (data.message ?? "").trim();
     const lower = message.toLowerCase();
     const domainCheck = analyzeDomainAlignment(data.recruiterEmail, data.companyDomain);
+    type HeaderAuthCheck = {
+      spf: "pass" | "fail" | "softfail" | "none" | "unknown";
+      dkim: "pass" | "fail" | "none" | "unknown";
+      dmarc: "pass" | "fail" | "none" | "unknown";
+      findings: string[];
+      reasons: string[];
+      nextSteps: string[];
+      scoreDelta: number;
+      floor: number;
+    };
 
+    function parseHeaderAuth(headers?: string): HeaderAuthCheck {
+      const raw = (headers ?? "").trim();
+      if (!raw) {
+        return {
+          spf: "unknown",
+          dkim: "unknown",
+          dmarc: "unknown",
+          findings: [],
+          reasons: [],
+          nextSteps: [],
+          scoreDelta: 0,
+          floor: 0,
+        };
+      }
+
+      const lower = raw.toLowerCase();
+
+      const result: HeaderAuthCheck = {
+        spf: "unknown",
+        dkim: "unknown",
+        dmarc: "unknown",
+        findings: [],
+        reasons: [],
+        nextSteps: [],
+        scoreDelta: 0,
+        floor: 0,
+      };
+
+      // SPF
+      if (/\bspf\s*=\s*pass\b/.test(lower) || /\bspf:\s*pass\b/.test(lower)) {
+        result.spf = "pass";
+      } else if (/\bspf\s*=\s*softfail\b/.test(lower)) {
+        result.spf = "softfail";
+        result.findings.push("Email headers show SPF softfail.");
+        result.reasons.push("SPF softfail means the sender was not strongly authorized for the sending domain.");
+        result.nextSteps.push("Be cautious: ask the recruiter to resend from the official company email domain.");
+        result.scoreDelta += 10;
+        result.floor = Math.max(result.floor, 15);
+      } else if (/\bspf\s*=\s*fail\b/.test(lower) || /\bspf:\s*fail\b/.test(lower)) {
+        result.spf = "fail";
+        result.findings.push("Email headers show SPF fail.");
+        result.reasons.push("SPF fail suggests the sending server was not authorized to send mail for that domain.");
+        result.nextSteps.push("Do not trust the sender identity yet. Verify through the company's official website.");
+        result.scoreDelta += 18;
+        result.floor = Math.max(result.floor, 25);
+      } else if (/\bspf\s*=\s*none\b/.test(lower)) {
+        result.spf = "none";
+        result.findings.push("Email headers show no SPF result.");
+        result.reasons.push("Missing SPF makes sender-domain verification weaker.");
+        result.nextSteps.push(
+          "Ask the recruiter to resend from the official company domain or verify them independently.",
+        );
+        result.scoreDelta += 6;
+      }
+
+      // DKIM
+      if (/\bdkim\s*=\s*pass\b/.test(lower) || /\bdkim:\s*pass\b/.test(lower)) {
+        result.dkim = "pass";
+      } else if (/\bdkim\s*=\s*fail\b/.test(lower) || /\bdkim:\s*fail\b/.test(lower)) {
+        result.dkim = "fail";
+        result.findings.push("Email headers show DKIM fail.");
+        result.reasons.push(
+          "DKIM fail means the message could not be cryptographically validated for the claimed signing domain.",
+        );
+        result.nextSteps.push(
+          "Treat the email cautiously and verify the recruiter through an official company channel.",
+        );
+        result.scoreDelta += 16;
+        result.floor = Math.max(result.floor, 25);
+      } else if (/\bdkim\s*=\s*none\b/.test(lower)) {
+        result.dkim = "none";
+        result.findings.push("Email headers show no DKIM result.");
+        result.reasons.push("Without DKIM, message authenticity is harder to verify.");
+        result.nextSteps.push("Verify the recruiter through the official company website before replying.");
+        result.scoreDelta += 6;
+      }
+
+      // DMARC
+      if (/\bdmarc\s*=\s*pass\b/.test(lower) || /\bdmarc:\s*pass\b/.test(lower)) {
+        result.dmarc = "pass";
+      } else if (/\bdmarc\s*=\s*fail\b/.test(lower) || /\bdmarc:\s*fail\b/.test(lower)) {
+        result.dmarc = "fail";
+        result.findings.push("Email headers show DMARC fail.");
+        result.reasons.push(
+          "DMARC fail is a strong phishing/spoofing warning because the message did not align with the domain's authentication policy.",
+        );
+        result.nextSteps.push(
+          "Do not trust this sender identity. Contact the company through its official careers page instead.",
+        );
+        result.scoreDelta += 22;
+        result.floor = Math.max(result.floor, 35);
+      } else if (/\bdmarc\s*=\s*none\b/.test(lower)) {
+        result.dmarc = "none";
+        result.findings.push("Email headers show no DMARC result.");
+        result.reasons.push(
+          "Missing DMARC reduces confidence that the sender identity is aligned and protected from spoofing.",
+        );
+        result.nextSteps.push("Be cautious and verify the recruiter outside the email thread.");
+        result.scoreDelta += 8;
+      }
+
+      return result;
+    }
+    const headerAuth = parseHeaderAuth(data.headers);
     if (!message) {
       const baseFindings = ["No message text was provided to analyze."];
-      const baseSteps = [
-        "Paste the recruiter's full message into the message field and run the analysis again.",
-      ];
+      const baseSteps = ["Paste the recruiter's full message into the message field and run the analysis again."];
       if (domainCheck.finding) baseFindings.push(domainCheck.finding);
       if (domainCheck.next_step) baseSteps.push(domainCheck.next_step);
 
@@ -664,11 +896,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const level = levelFor(score);
 
     const domainIsNegative =
-      domainCheck.status === "mismatch" ||
-      domainCheck.status === "lookalike" ||
-      domainCheck.status === "public_email";
-    const domainIsPositive =
-      domainCheck.status === "match" || domainCheck.status === "subdomain";
+      domainCheck.status === "mismatch" || domainCheck.status === "lookalike" || domainCheck.status === "public_email";
+    const domainIsPositive = domainCheck.status === "match" || domainCheck.status === "subdomain";
 
     const findings: string[] = [];
     if (domainIsNegative && domainCheck.finding) findings.push(domainCheck.finding);
@@ -698,17 +927,17 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (matchedPositive.length && stepSet.size < 5) {
       stepSet.add("Even with positive signals, confirm the role exists on the company's official careers page.");
     }
-    if (domainCheck.status === "unverifiable" && domainCheck.next_step && stepSet.size < 5 && (data.recruiterEmail || data.companyDomain)) {
+    if (
+      domainCheck.status === "unverifiable" &&
+      domainCheck.next_step &&
+      stepSet.size < 5 &&
+      (data.recruiterEmail || data.companyDomain)
+    ) {
       stepSet.add(domainCheck.next_step);
     }
     const next_steps = Array.from(stepSet).slice(0, 5);
 
-    let why_it_matters = buildWhyItMatters(
-      level,
-      matchedScam.length,
-      matchedCaution.length,
-      matchedPositive.length,
-    );
+    let why_it_matters = buildWhyItMatters(level, matchedScam.length, matchedCaution.length, matchedPositive.length);
     if (domainIsNegative) {
       why_it_matters = `${domainCheck.reason} A polished, professional-sounding message does not cancel a sender/company domain mismatch — scammers can and do write normal-sounding outreach. ${why_it_matters}`;
     } else if (domainIsPositive) {
@@ -717,9 +946,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       why_it_matters = `${why_it_matters} Note: we couldn't verify whether the sender's domain aligns with the claimed company.`;
     }
 
-    const summaryParts: string[] = [
-      `This recruiter check scored ${score} out of 100, which is ${level}.`,
-    ];
+    const summaryParts: string[] = [`This recruiter check scored ${score} out of 100, which is ${level}.`];
     if (matchedScam.length) {
       summaryParts.push(
         `We detected ${matchedScam.length} scam signal${matchedScam.length === 1 ? "" : "s"}, including: ${matchedScam
