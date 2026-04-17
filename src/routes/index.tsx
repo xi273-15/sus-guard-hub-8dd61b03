@@ -116,11 +116,11 @@ function Index() {
               <CardHeader className="border-b border-border/60">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <CardTitle className="flex items-center gap-2 text-xl">
+                    <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
                       <Search className="h-5 w-5 text-primary" />
                       Check a recruiter
                     </CardTitle>
-                    <CardDescription className="mt-1">
+                    <CardDescription className="mt-1.5 text-sm sm:text-base">
                       Fill in what you have — even a single field helps.
                     </CardDescription>
                   </div>
@@ -354,15 +354,15 @@ function FormSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="space-y-4">
+    <section className="space-y-5">
       <div className="flex items-baseline gap-3">
-        <span className="text-xs font-semibold tracking-widest text-primary/80">
+        <span className="text-sm font-bold tracking-widest text-primary/90">
           {eyebrow}
         </span>
         <div>
-          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          <h3 className="text-base font-semibold text-foreground">{title}</h3>
           {description && (
-            <p className="text-xs text-muted-foreground">{description}</p>
+            <p className="text-sm text-muted-foreground">{description}</p>
           )}
         </div>
       </div>
@@ -387,17 +387,17 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <Label
         htmlFor={id}
-        className="flex items-center gap-1.5 text-xs font-medium text-foreground/90"
+        className="flex items-center gap-1.5 text-sm font-medium text-foreground"
       >
-        {icon && <span className="text-primary/70">{icon}</span>}
+        {icon && <span className="text-primary/80">{icon}</span>}
         {label}
         {required && <span className="text-primary">*</span>}
       </Label>
       {children}
-      {hint && <p className="text-[11px] leading-relaxed text-muted-foreground">{hint}</p>}
+      {hint && <p className="text-xs leading-relaxed text-muted-foreground">{hint}</p>}
     </div>
   );
 }
