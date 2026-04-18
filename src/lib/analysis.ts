@@ -1376,6 +1376,7 @@ async function runRdapLookup(input: {
     ageBucket: bucket,
     ageSummary: summary,
     interpretation,
+    registrantCountry,
   };
 
   let scoreDelta = 0;
