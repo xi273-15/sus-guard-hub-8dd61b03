@@ -314,6 +314,8 @@ function Index() {
                       id="message"
                       label="The message they sent"
                       icon={<FileText className="h-3.5 w-3.5" />}
+                      speakText="Paste the recruiter's full message, DM, or job offer here. We scan it for common scam wording, urgency, and red-flag patterns."
+                      speakKey="field:message"
                     >
                       <Textarea
                         id="message"
@@ -329,6 +331,9 @@ function Index() {
                       label="Email headers"
                       icon={<FileText className="h-3.5 w-3.5" />}
                       hint="Optional · Paste the raw email headers if you have them — improves accuracy."
+                      speakText="The raw technical headers of the email. They reveal who actually sent it, regardless of what the From line says. Tap the question mark to learn how to find them in Gmail."
+                      speakKey="field:headers"
+                      trailingAction={<HeadersHelpDialog />}
                     >
                       <Textarea
                         id="headers"
@@ -338,6 +343,7 @@ function Index() {
                         onChange={update("headers")}
                       />
                     </Field>
+
                   </FormSection>
 
                   {error && (
