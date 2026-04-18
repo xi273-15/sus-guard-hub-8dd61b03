@@ -2017,6 +2017,16 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         baseFindings.push(`DNS for ${dns.domain}: ${dns.summary}`);
       }
       if (dnsLookup.nextStep) baseSteps.push(dnsLookup.nextStep);
+      if (safeBrowsingLookup.scoreDelta > 0) {
+        noMsgScore = Math.min(95, noMsgScore + safeBrowsingLookup.scoreDelta);
+      } else if (safeBrowsingLookup.scoreDelta < 0) {
+        noMsgScore = Math.max(0, noMsgScore + safeBrowsingLookup.scoreDelta);
+      }
+      if (safeBrowsingLookup.floor > 0) noMsgScore = Math.max(noMsgScore, safeBrowsingLookup.floor);
+      if (safeBrowsing.safe_browsing_status === "flagged") {
+        baseFindings.push(safeBrowsing.safe_browsing_summary);
+      }
+      if (safeBrowsingLookup.nextStep) baseSteps.push(safeBrowsingLookup.nextStep);
 
       const noMsgLevel = levelFor(noMsgScore);
 
@@ -2035,6 +2045,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       osint.whyPoints.forEach((p) => noMsgWhyPoints.push(p));
       if (rdapLookup.whyPoint) noMsgWhyPoints.push(rdapLookup.whyPoint);
       if (dnsLookup.whyPoint) noMsgWhyPoints.push(dnsLookup.whyPoint);
+      if (safeBrowsingLookup.whyPoint) noMsgWhyPoints.push(safeBrowsingLookup.whyPoint);
 
       return {
         risk_score: noMsgScore,
@@ -2053,6 +2064,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         osint_links: osint.result.links,
         rdap,
         dns,
+        safe_browsing: safeBrowsing,
       };
     }
 
