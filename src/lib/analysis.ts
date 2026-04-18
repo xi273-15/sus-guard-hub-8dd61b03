@@ -2375,6 +2375,31 @@ function emptyRecruiterLocation(reason: string): RecruiterLocationResult {
   };
 }
 
+// Deterministic fallback: scan OSINT text for a "City, Country" pattern.
+// Used when the AI returns null so the same recruiter consistently surfaces a location.
+function heuristicLocationFromText(text: string): { location: string; country: string | null; source: string } | null {
+  if (!text) return null;
+  // Match "Word(, Word)?, <Country>" — e.g. "Hyderabad, Telangana, India" or "Berlin, Germany"
+  const countryAlternation = Object.keys(COUNTRY_NAME_TO_CODE)
+    .filter((n) => n.length >= 4)
+    .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+  const re = new RegExp(
+    `\\b([A-Z][A-Za-z.\\-]+(?:\\s+[A-Z][A-Za-z.\\-]+){0,2}(?:,\\s*[A-Z][A-Za-z.\\-]+(?:\\s+[A-Z][A-Za-z.\\-]+){0,2})?),\\s*(${countryAlternation})\\b`,
+    "i",
+  );
+  const m = text.match(re);
+  if (!m) return null;
+  const city = m[1].trim();
+  const countryName = m[2].trim();
+  const code = COUNTRY_NAME_TO_CODE[countryName.toLowerCase()] ?? null;
+  return {
+    location: `${city}, ${countryName}`,
+    country: code,
+    source: "public web mentions",
+  };
+}
+
 type LocationAiResult = {
   location: string | null;
   country: string | null;
@@ -2562,7 +2587,27 @@ async function runRecruiterLocation(args: {
     osintLinks: args.osintLinks,
   });
 
-  if (!ai || !ai.location) {
+  let aiResult = ai;
+
+  // Deterministic fallback if the AI bailed: scan OSINT findings + links for "City, Country".
+  if (!aiResult || !aiResult.location) {
+    const haystack = [
+      ...args.osintFindings,
+      ...args.osintLinks.map((l) => `${l.title} ${l.url}`),
+      message,
+    ].join("\n");
+    const heuristic = heuristicLocationFromText(haystack);
+    if (heuristic) {
+      aiResult = {
+        location: heuristic.location,
+        country: heuristic.country,
+        confidence: "low",
+        source: heuristic.source,
+      };
+    }
+  }
+
+  if (!aiResult || !aiResult.location) {
     return {
       result: {
         ...emptyRecruiterLocation(
@@ -2576,12 +2621,12 @@ async function runRecruiterLocation(args: {
     };
   }
 
-  const recruiterCountry = ai.country || normalizeCountryToCode(ai.location);
+  const recruiterCountry = aiResult.country || normalizeCountryToCode(aiResult.location);
   const mismatch =
     !!recruiterCountry && !!hiringCountry && recruiterCountry.toUpperCase() !== hiringCountry.toUpperCase();
 
-  const sourceText = ai.source ? ` based on ${ai.source}` : "";
-  const summary = `Recruiter public location appears to be ${ai.location}${sourceText}. (${ai.confidence} confidence)`;
+  const sourceText = aiResult.source ? ` based on ${aiResult.source}` : "";
+  const summary = `Recruiter public location appears to be ${aiResult.location}${sourceText}. (${aiResult.confidence} confidence)`;
 
   let cautionNote: string | null = null;
   let whyPoint: WhyPoint | null = null;
@@ -2592,22 +2637,22 @@ async function runRecruiterLocation(args: {
       "This differs from the claimed hiring/company context and may warrant extra verification. " +
       "Cross-border recruiter outreach is not inherently fraudulent, but it should be verified carefully, especially when combined with other weak trust signals.";
     whyPoint = {
-      finding: `Recruiter's public location (${ai.location}) appears to differ from the claimed hiring context (${hiringLabel}).`,
+      finding: `Recruiter's public location (${aiResult.location}) appears to differ from the claimed hiring context (${hiringLabel}).`,
       why: cautionNote,
       severity: "caution",
     };
     // Very small bump only — handler will optionally amplify when other weak
     // signals are present. Country alone is never proof.
-    scoreDelta = ai.confidence === "high" ? 3 : ai.confidence === "medium" ? 2 : 1;
+    scoreDelta = aiResult.confidence === "high" ? 3 : aiResult.confidence === "medium" ? 2 : 1;
   }
 
   return {
     result: {
       available: true,
-      recruiter_public_location: ai.location,
+      recruiter_public_location: aiResult.location,
       recruiter_country: recruiterCountry,
-      location_confidence: ai.confidence,
-      location_source: ai.source,
+      location_confidence: aiResult.confidence,
+      location_source: aiResult.source,
       hiring_context_label: hiringLabel,
       hiring_context_country: hiringCountry,
       mismatch,
