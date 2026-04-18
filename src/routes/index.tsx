@@ -198,7 +198,7 @@ function Index() {
         </p>
       </header>
 
-      <main className="mx-auto max-w-3xl px-6 pb-20">
+      <main className={`mx-auto px-6 pb-20 ${stage === "results" ? "max-w-6xl" : "max-w-3xl"}`}>
         {stage === "input" && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
 
