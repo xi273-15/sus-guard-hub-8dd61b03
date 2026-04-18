@@ -2375,6 +2375,31 @@ function emptyRecruiterLocation(reason: string): RecruiterLocationResult {
   };
 }
 
+// Deterministic fallback: scan OSINT text for a "City, Country" pattern.
+// Used when the AI returns null so the same recruiter consistently surfaces a location.
+function heuristicLocationFromText(text: string): { location: string; country: string | null; source: string } | null {
+  if (!text) return null;
+  // Match "Word(, Word)?, <Country>" — e.g. "Hyderabad, Telangana, India" or "Berlin, Germany"
+  const countryAlternation = Object.keys(COUNTRY_NAME_TO_CODE)
+    .filter((n) => n.length >= 4)
+    .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+  const re = new RegExp(
+    `\\b([A-Z][A-Za-z.\\-]+(?:\\s+[A-Z][A-Za-z.\\-]+){0,2}(?:,\\s*[A-Z][A-Za-z.\\-]+(?:\\s+[A-Z][A-Za-z.\\-]+){0,2})?),\\s*(${countryAlternation})\\b`,
+    "i",
+  );
+  const m = text.match(re);
+  if (!m) return null;
+  const city = m[1].trim();
+  const countryName = m[2].trim();
+  const code = COUNTRY_NAME_TO_CODE[countryName.toLowerCase()] ?? null;
+  return {
+    location: `${city}, ${countryName}`,
+    country: code,
+    source: "public web mentions",
+  };
+}
+
 type LocationAiResult = {
   location: string | null;
   country: string | null;
