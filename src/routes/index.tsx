@@ -18,6 +18,7 @@ import {
   Loader2,
   Accessibility,
   CheckCircle2,
+  Mailbox,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -484,6 +485,81 @@ function Index() {
               )}
             </ResultCard>
           </div>
+
+          {result && result.header_explanations.length > 0 && (
+            <ResultCard
+              icon={<Mailbox className="h-4 w-4" />}
+              title="Email header checks"
+              description="What we found in the raw email headers, point by point — each item has a plain-language explanation so the tech jargon doesn't get in your way."
+              full
+              loading={loading}
+              hasData={!!result}
+            >
+              <ul className="space-y-3">
+                {result.header_explanations.map((h, i) => {
+                  const sev = h.severity;
+                  const styles =
+                    sev === "good"
+                      ? "border-emerald-500/30 bg-emerald-500/5"
+                      : sev === "bad"
+                        ? "border-red-500/30 bg-red-500/5"
+                        : sev === "caution"
+                          ? "border-amber-500/30 bg-amber-500/5"
+                          : "border-border/60 bg-background/40";
+                  const dotStyles =
+                    sev === "good"
+                      ? "bg-emerald-500"
+                      : sev === "bad"
+                        ? "bg-red-500"
+                        : sev === "caution"
+                          ? "bg-amber-500"
+                          : "bg-muted-foreground";
+                  const label =
+                    sev === "good"
+                      ? "Good"
+                      : sev === "bad"
+                        ? "Red flag"
+                        : sev === "caution"
+                          ? "Caution"
+                          : "Heads up";
+                  const labelStyles =
+                    sev === "good"
+                      ? "text-emerald-600 border-emerald-500/30 bg-emerald-500/10"
+                      : sev === "bad"
+                        ? "text-red-600 border-red-500/30 bg-red-500/10"
+                        : sev === "caution"
+                          ? "text-amber-600 border-amber-500/30 bg-amber-500/10"
+                          : "text-muted-foreground border-border/60 bg-background/60";
+                  return (
+                    <li
+                      key={i}
+                      className={`rounded-lg border p-3.5 ${styles}`}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dotStyles}`} />
+                        <div className="flex-1 space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${labelStyles}`}
+                            >
+                              {label}
+                            </span>
+                          </div>
+                          <p className="text-sm font-medium leading-snug text-foreground">
+                            {h.finding}
+                          </p>
+                          <p className="text-xs leading-relaxed text-muted-foreground">
+                            <span className="font-semibold text-foreground/80">Why this matters: </span>
+                            {h.why}
+                          </p>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </ResultCard>
+          )}
 
           <ResultCard
             icon={<Shield className="h-4 w-4" />}
