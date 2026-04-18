@@ -1056,6 +1056,14 @@ async function runTavilyOsint(input: {
       why: "We couldn't find clear public sources tying this person to this company. This is not proof of a scam, but it's worth confirming through the company's official careers page or LinkedIn.",
       severity: "info",
     });
+  }
+
+  return {
+    result: { summary, findings, links: dedupeLinks(allLinks) },
+    scoreDelta,
+    whyPoints,
+    nextSteps,
+  };
 }
 
 // ---------- RDAP domain registration lookup ----------
