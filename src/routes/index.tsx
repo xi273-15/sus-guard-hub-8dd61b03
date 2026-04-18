@@ -22,6 +22,7 @@ import {
   Network,
   ShieldCheck,
   ScrollText,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,7 +37,13 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/theme-toggle";
-import type { RdapResult, DnsResult, SafeBrowsingResult, CtResult } from "@/lib/analysis";
+import type {
+  RdapResult,
+  DnsResult,
+  SafeBrowsingResult,
+  CtResult,
+  WaybackResult,
+} from "@/lib/analysis";
 import { analyzeRecruiter, type AnalysisResult } from "@/lib/analysis";
 import { FloatingAudioAssistant } from "@/components/floating-audio-assistant";
 
@@ -627,6 +634,17 @@ function Index() {
           >
             {result && <CtCardBody ct={result.ct} />}
           </ResultCard>
+
+          <ResultCard
+            icon={<History className="h-4 w-4" />}
+            title="Website history"
+            description="How long the company website has been visible in the Internet Archive Wayback Machine."
+            full
+            loading={loading}
+            hasData={!!result}
+          >
+            {result && <WaybackCardBody wayback={result.wayback} />}
+          </ResultCard>
         </section>
 
         <footer className="mt-16 border-t border-border/60 pt-8 pb-6 text-center text-sm text-muted-foreground">
@@ -1082,6 +1100,59 @@ function CtCardBody({ ct }: { ct: CtResult }) {
       )}
 
       <p className="text-sm leading-relaxed text-muted-foreground">{ct.interpretation}</p>
+    </div>
+  );
+}
+
+function WaybackCardBody({ wayback }: { wayback: WaybackResult }) {
+  if (!wayback.available) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm leading-relaxed text-foreground/90">{wayback.website_history_summary}</p>
+        <p className="text-sm leading-relaxed text-muted-foreground">{wayback.interpretation}</p>
+      </div>
+    );
+  }
+
+  const statusStyles: Record<WaybackResult["archive_history_status"], string> = {
+    established: "text-emerald-500 border-emerald-500/30 bg-emerald-500/10",
+    moderate: "text-foreground/80 border-border/60 bg-background/60",
+    thin: "text-amber-500 border-amber-500/30 bg-amber-500/10",
+    recent_only: "text-rose-500 border-rose-500/30 bg-rose-500/10",
+    none: "text-amber-500 border-amber-500/30 bg-amber-500/10",
+    unknown: "border-border/60 bg-background/60 text-muted-foreground",
+  };
+  const statusLabel: Record<WaybackResult["archive_history_status"], string> = {
+    established: "Long-standing history",
+    moderate: "Moderate history",
+    thin: "Thin history",
+    recent_only: "Very recent only",
+    none: "No archive history",
+    unknown: "Unknown",
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <RdapField label="Checked URL" value={wayback.checked_url ?? "—"} mono />
+        <div className="rounded-md border border-border/60 bg-background/40 px-3 py-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Archive history
+          </p>
+          <span
+            className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${statusStyles[wayback.archive_history_status]}`}
+          >
+            {statusLabel[wayback.archive_history_status]}
+          </span>
+        </div>
+        <RdapField label="First seen" value={formatDate(wayback.first_seen_archive_date)} />
+        <RdapField label="Latest snapshot" value={formatDate(wayback.most_recent_archive_date)} />
+        {wayback.snapshot_count !== null && (
+          <RdapField label="Snapshots" value={String(wayback.snapshot_count)} />
+        )}
+      </div>
+
+      <p className="text-sm leading-relaxed text-muted-foreground">{wayback.interpretation}</p>
     </div>
   );
 }

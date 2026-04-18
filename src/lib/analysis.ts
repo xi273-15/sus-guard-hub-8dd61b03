@@ -91,6 +91,26 @@ export type CtResult = {
   error?: string;
 };
 
+export type WaybackStatus =
+  | "established"
+  | "moderate"
+  | "recent_only"
+  | "thin"
+  | "none"
+  | "unknown";
+
+export type WaybackResult = {
+  available: boolean;
+  checked_url: string | null;
+  archive_history_status: WaybackStatus;
+  first_seen_archive_date: string | null; // ISO
+  most_recent_archive_date: string | null; // ISO
+  snapshot_count: number | null;
+  website_history_summary: string;
+  interpretation: string;
+  error?: string;
+};
+
 export type AnalysisResult = {
   risk_score: number;
   risk_level: RiskLevel;
@@ -106,6 +126,7 @@ export type AnalysisResult = {
   dns: DnsResult;
   safe_browsing: SafeBrowsingResult;
   ct: CtResult;
+  wayback: WaybackResult;
 };
 
 type SignalKind = "scam" | "caution" | "positive";
@@ -1972,6 +1993,221 @@ async function runCtLookup(input: {
 }
 
 
+// ---------- Wayback Machine (Internet Archive) ----------
+function emptyWayback(checkedUrl: string | null, summary: string, error?: string): WaybackResult {
+  return {
+    available: false,
+    checked_url: checkedUrl,
+    archive_history_status: "unknown",
+    first_seen_archive_date: null,
+    most_recent_archive_date: null,
+    snapshot_count: null,
+    website_history_summary: summary,
+    interpretation: summary,
+    error,
+  };
+}
+
+function parseWaybackTimestamp(ts: string): string | null {
+  // Wayback timestamps look like 19980101000000
+  const m = ts.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/);
+  if (!m) return null;
+  const [, y, mo, d, h, mi, s] = m;
+  const iso = `${y}-${mo}-${d}T${h}:${mi}:${s}Z`;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  return new Date(t).toISOString();
+}
+
+async function runWayback(input: {
+  companyDomain?: string;
+}): Promise<{
+  result: WaybackResult;
+  scoreDelta: number;
+  floor: number;
+  whyPoint: WhyPoint | null;
+  nextStep: string | null;
+}> {
+  const rawDomain = input.companyDomain ? normalizeCompanyDomain(input.companyDomain) : null;
+  const checkedUrl = rawDomain ? `https://${rawDomain}` : null;
+
+  if (!rawDomain || !checkedUrl) {
+    return {
+      result: emptyWayback(null, "No company website was provided to check archive history."),
+      scoreDelta: 0,
+      floor: 0,
+      whyPoint: null,
+      nextStep: null,
+    };
+  }
+
+  let firstIso: string | null = null;
+  let latestIso: string | null = null;
+  let snapshotCount: number | null = null;
+
+  try {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 10_000);
+
+    // CDX gives us the first and latest snapshots and a total count via collapse=urlkey
+    const cdxUrl =
+      `https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(rawDomain)}` +
+      `&output=json&fl=timestamp&limit=100000&collapse=timestamp:8`;
+
+    const res = await fetch(cdxUrl, {
+      headers: { Accept: "application/json", "User-Agent": "suscruit-wayback-check/1.0" },
+      signal: ac.signal,
+    });
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      return {
+        result: emptyWayback(
+          checkedUrl,
+          `Wayback Machine did not return data for ${rawDomain}, so its archive history could not be established.`,
+          `http_${res.status}`,
+        ),
+        scoreDelta: 0,
+        floor: 0,
+        whyPoint: null,
+        nextStep: null,
+      };
+    }
+
+    const json = (await res.json()) as string[][];
+    // First row is the header (["timestamp"]), rest are values.
+    const rows = Array.isArray(json) && json.length > 0 ? json.slice(1) : [];
+    if (rows.length > 0) {
+      snapshotCount = rows.length;
+      const first = rows[0]?.[0];
+      const last = rows[rows.length - 1]?.[0];
+      if (first) firstIso = parseWaybackTimestamp(first);
+      if (last) latestIso = parseWaybackTimestamp(last);
+    }
+  } catch (err) {
+    return {
+      result: emptyWayback(
+        checkedUrl,
+        `Wayback Machine lookup failed for ${rawDomain}, so its archive history could not be established.`,
+        err instanceof Error ? err.message : "unknown_error",
+      ),
+      scoreDelta: 0,
+      floor: 0,
+      whyPoint: null,
+      nextStep: null,
+    };
+  }
+
+  const now = Date.now();
+  const firstTs = firstIso ? Date.parse(firstIso) : null;
+  const latestTs = latestIso ? Date.parse(latestIso) : null;
+  const ageDays = firstTs ? Math.floor((now - firstTs) / 86_400_000) : null;
+  const daysSinceLatest = latestTs ? Math.floor((now - latestTs) / 86_400_000) : null;
+
+  let status: WaybackStatus;
+  if (snapshotCount === null || snapshotCount === 0) {
+    status = "none";
+  } else if (ageDays === null) {
+    status = "unknown";
+  } else if (ageDays >= 365 * 5 && snapshotCount >= 20) {
+    status = "established";
+  } else if (ageDays >= 365 * 2) {
+    status = "moderate";
+  } else if (ageDays < 180) {
+    status = "recent_only";
+  } else {
+    status = "thin";
+  }
+
+  const niceFirst = firstIso ? firstIso.slice(0, 10) : null;
+  const niceLatest = latestIso ? latestIso.slice(0, 10) : null;
+
+  const summaryParts: string[] = [];
+  if (snapshotCount !== null) {
+    summaryParts.push(`${snapshotCount} snapshot${snapshotCount === 1 ? "" : "s"}`);
+  }
+  if (niceFirst) summaryParts.push(`first seen ${niceFirst}`);
+  if (niceLatest) summaryParts.push(`latest ${niceLatest}`);
+  if (daysSinceLatest !== null && daysSinceLatest > 365) {
+    summaryParts.push(`(no fresh snapshot in ${Math.floor(daysSinceLatest / 30)} months)`);
+  }
+  const website_history_summary = summaryParts.length
+    ? summaryParts.join(" · ")
+    : "No archive history found.";
+
+  let interpretation: string;
+  let scoreDelta = 0;
+  let whyPoint: WhyPoint | null = null;
+  let nextStep: string | null = null;
+
+  if (status === "established") {
+    const years = Math.floor((ageDays ?? 0) / 365);
+    interpretation = `${rawDomain} has long-standing archive history (~${years} years, ${snapshotCount} snapshots). Consistent with an established, regularly operated website — though not proof on its own.`;
+    scoreDelta = -3;
+    whyPoint = {
+      finding: `${rawDomain} has long-standing visible web history (first archived around ${niceFirst}).`,
+      why: interpretation,
+      severity: "good",
+    };
+  } else if (status === "moderate") {
+    const years = Math.floor((ageDays ?? 0) / 365);
+    interpretation = `${rawDomain} has moderate archive history (~${years} year${years === 1 ? "" : "s"}, ${snapshotCount} snapshots). Reasonable but not as established as a long-running site.`;
+    scoreDelta = -1;
+    whyPoint = {
+      finding: `${rawDomain} has moderate web history (~${years} year${years === 1 ? "" : "s"}).`,
+      why: interpretation,
+      severity: "info",
+    };
+  } else if (status === "thin") {
+    interpretation = `${rawDomain} has only thin archive history (about ${ageDays} days, ${snapshotCount} snapshots). Possible for a small or recent site, but worth noting if the company is supposed to be well-established.`;
+    scoreDelta = 4;
+    whyPoint = {
+      finding: `${rawDomain} has thin web history (about ${ageDays} days, ${snapshotCount} snapshots).`,
+      why: interpretation,
+      severity: "caution",
+    };
+  } else if (status === "recent_only") {
+    interpretation = `${rawDomain} only appears in archive history very recently (about ${ageDays} day${ageDays === 1 ? "" : "s"} ago). Brand-new sites are normal for new companies, but a recruiter from a supposedly established employer using a brand-new site is a meaningful caution.`;
+    scoreDelta = 8;
+    whyPoint = {
+      finding: `${rawDomain} only appears in web archive history very recently (~${ageDays} day${ageDays === 1 ? "" : "s"} ago).`,
+      why: interpretation,
+      severity: "caution",
+    };
+    nextStep = `Treat ${rawDomain} with extra caution — it has very little visible web history. Verify the company through an independent source.`;
+  } else if (status === "none") {
+    interpretation = `${rawDomain} has no visible Wayback Machine history. Most working business sites have at least a few snapshots. This is a mild caution, not proof of fraud.`;
+    scoreDelta = 3;
+    whyPoint = {
+      finding: `${rawDomain} has no visible Wayback Machine history.`,
+      why: interpretation,
+      severity: "caution",
+    };
+  } else {
+    interpretation = `Wayback Machine returned data for ${rawDomain} but its history could not be clearly classified.`;
+    scoreDelta = 0;
+    whyPoint = null;
+  }
+
+  return {
+    result: {
+      available: true,
+      checked_url: checkedUrl,
+      archive_history_status: status,
+      first_seen_archive_date: firstIso,
+      most_recent_archive_date: latestIso,
+      snapshot_count: snapshotCount,
+      website_history_summary,
+      interpretation,
+    },
+    scoreDelta,
+    floor: 0,
+    whyPoint,
+    nextStep,
+  };
+}
+
+
 export const analyzeRecruiter = createServerFn({ method: "POST" })
   .inputValidator((input: AnalysisInput) => input)
   .handler(async ({ data }): Promise<AnalysisResult> => {
@@ -1980,7 +2216,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const domainCheck = analyzeDomainAlignment(data.recruiterEmail, data.companyDomain);
 
     // ---------- Tavily OSINT + RDAP + DNS (server-side only, in parallel) ----------
-    const [osint, rdapLookup, dnsLookup, safeBrowsingLookup, ctLookup] = await Promise.all([
+    const [osint, rdapLookup, dnsLookup, safeBrowsingLookup, ctLookup, waybackLookup] = await Promise.all([
       runTavilyOsint({
         recruiterName: data.recruiterName,
         companyName: data.companyName,
@@ -2000,11 +2236,15 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       runCtLookup({
         recruiterEmail: data.recruiterEmail,
       }),
+      runWayback({
+        companyDomain: data.companyDomain,
+      }),
     ]);
     const rdap = rdapLookup.result;
     const dns = dnsLookup.result;
     const safeBrowsing = safeBrowsingLookup.result;
     const ct = ctLookup.result;
+    const wayback = waybackLookup.result;
     type HeaderAuthCheck = {
       spf: "pass" | "fail" | "softfail" | "none" | "unknown";
       dkim: "pass" | "fail" | "none" | "unknown";
@@ -2354,6 +2594,16 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         baseFindings.push(`No CT certificates found for ${ct.domain}`);
       }
       if (ctLookup.nextStep) baseSteps.push(ctLookup.nextStep);
+      if (waybackLookup.scoreDelta > 0) {
+        noMsgScore = Math.min(95, noMsgScore + waybackLookup.scoreDelta);
+      } else if (waybackLookup.scoreDelta < 0) {
+        noMsgScore = Math.max(0, noMsgScore + waybackLookup.scoreDelta);
+      }
+      if (waybackLookup.floor > 0) noMsgScore = Math.max(noMsgScore, waybackLookup.floor);
+      if (wayback.available) {
+        baseFindings.push(`Web history for ${wayback.checked_url}: ${wayback.website_history_summary}`);
+      }
+      if (waybackLookup.nextStep) baseSteps.push(waybackLookup.nextStep);
 
       const noMsgLevel = levelFor(noMsgScore);
 
@@ -2374,6 +2624,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (dnsLookup.whyPoint) noMsgWhyPoints.push(dnsLookup.whyPoint);
       if (safeBrowsingLookup.whyPoint) noMsgWhyPoints.push(safeBrowsingLookup.whyPoint);
       if (ctLookup.whyPoint) noMsgWhyPoints.push(ctLookup.whyPoint);
+      if (waybackLookup.whyPoint) noMsgWhyPoints.push(waybackLookup.whyPoint);
 
       return {
         risk_score: noMsgScore,
@@ -2394,6 +2645,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         dns,
         safe_browsing: safeBrowsing,
         ct,
+        wayback,
       };
     }
 
@@ -2437,6 +2689,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     score += dnsLookup.scoreDelta;
     score += safeBrowsingLookup.scoreDelta;
     score += ctLookup.scoreDelta;
+    score += waybackLookup.scoreDelta;
 
     // Cap how much positive wording can lower the score. Strong red flags
     // (high-weight scam signals or domain mismatch/lookalike/public_email)
@@ -2475,6 +2728,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     }
     if (ctLookup.floor > 0) {
       score = Math.max(score, ctLookup.floor);
+    }
+    if (waybackLookup.floor > 0) {
+      score = Math.max(score, waybackLookup.floor);
     }
     score = Math.max(0, Math.min(100, Math.round(score)));
     const level = levelFor(score);
@@ -2683,6 +2939,18 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       summaryParts.push(`Certificate history: ${ct.interpretation}`);
     }
 
+    // Wayback findings, why-point, next step, and audio summary
+    if (wayback.available) {
+      findings.push(`Web history for ${wayback.checked_url}: ${wayback.website_history_summary}`);
+    }
+    if (waybackLookup.whyPoint) why_points.push(waybackLookup.whyPoint);
+    if (waybackLookup.nextStep && next_steps.length < 6 && !next_steps.includes(waybackLookup.nextStep)) {
+      next_steps.push(waybackLookup.nextStep);
+    }
+    if (wayback.available) {
+      summaryParts.push(`Website history: ${wayback.interpretation}`);
+    }
+
     return {
       risk_score: score,
       risk_level: level,
@@ -2698,5 +2966,6 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       dns,
       safe_browsing: safeBrowsing,
       ct,
+      wayback,
     };
   });
