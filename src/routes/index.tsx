@@ -728,66 +728,6 @@ function ResultsView({
 
 
 
-function ResultCard({
-  icon,
-  title,
-  description,
-  full,
-  loading,
-  hasData,
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  full?: boolean;
-  loading?: boolean;
-  hasData?: boolean;
-  children?: React.ReactNode;
-}) {
-  const status = loading ? "Analyzing" : hasData ? "Ready" : "Pending";
-  return (
-    <Card
-      className={`group border-border/60 bg-card/60 backdrop-blur transition-colors hover:border-primary/40 ${
-        full ? "md:col-span-2" : ""
-      }`}
-    >
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between gap-3">
-          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-            <span
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-primary"
-              style={{ backgroundColor: "color-mix(in oklab, var(--primary) 14%, transparent)" }}
-            >
-              {icon}
-            </span>
-            {title}
-          </CardTitle>
-          <span className="rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            {status}
-          </span>
-        </div>
-      </CardHeader>
-      <CardContent className="pt-0">
-        {loading ? (
-          <div className="space-y-2">
-            <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
-            <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
-            <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
-          </div>
-        ) : hasData ? (
-          <div>{children}</div>
-        ) : (
-          <div className="flex h-20 items-center justify-center rounded-md border border-dashed border-border/60 bg-background/40 text-xs text-muted-foreground">
-            No data yet
-          </div>
-        )}
-        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{description}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
