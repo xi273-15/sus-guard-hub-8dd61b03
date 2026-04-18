@@ -1018,9 +1018,9 @@ async function runTavilyOsint(input: {
       severity: "info",
     });
   } else if (domainScamHits > 0) {
-    summary = consistencyHits > 0
-      ? "Public results are mixed: the company appears legitimate, but the specific domain you're being contacted from has scam complaints tied to it. Read the linked sources before deciding."
-      : "We found scam complaints publicly tied to the exact domain in question. This is a meaningful red flag — review the linked sources before sharing anything.";
+    summary = looksLikeRealOrg
+      ? "The organization looks legitimate. We found some scam-related public mentions near this domain, but the context is limited and may reflect impersonation warnings rather than direct evidence the domain itself is malicious."
+      : "Public results mention this domain in scam-related discussions. The context isn't always clear, so review the linked sources before deciding — these are cautionary signals, not always proof the domain itself is fraudulent.";
   } else if (companyScamHits > 0 && looksLikeRealOrg) {
     summary =
       "The organization itself looks legitimate, but public scam warnings mention it as a possible impersonation target. Be extra careful to confirm this recruiter genuinely works there.";
