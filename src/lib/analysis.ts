@@ -969,6 +969,19 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
 
       const noMsgLevel = levelFor(noMsgScore);
 
+      const noMsgWhyPoints: WhyPoint[] = [];
+      if (
+        domainCheck.finding &&
+        domainCheck.reason &&
+        domainCheck.status !== "match" &&
+        domainCheck.status !== "subdomain"
+      ) {
+        const sev: WhyPoint["severity"] =
+          noMsgNegative ? "bad" : domainCheck.status === "unverifiable" ? "info" : "caution";
+        noMsgWhyPoints.push({ finding: domainCheck.finding, why: domainCheck.reason, severity: sev });
+      }
+      headerAuth.explanations.forEach((e) => noMsgWhyPoints.push(e));
+
       return {
         risk_score: noMsgScore,
         risk_level: noMsgLevel,
@@ -976,11 +989,11 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         why_it_matters: noMsgNegative
           ? `${domainCheck.reason} Paste the recruiter's full message to get a complete risk assessment — but note that a polished message would not cancel a sender/company domain mismatch.`
           : "Without the recruiter's message we can't check for scam wording. Paste their full message to get a real risk assessment.",
+        why_points: noMsgWhyPoints,
         next_steps: baseSteps,
         audio_summary: noMsgNegative
           ? `${domainCheck.finding} Paste the recruiter's full message to get a complete risk assessment.`
           : "No message was provided. Paste the recruiter's full message to get a real risk assessment.",
-        header_explanations: headerAuth.explanations,
       };
     }
 
