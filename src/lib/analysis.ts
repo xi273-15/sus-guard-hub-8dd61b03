@@ -3024,6 +3024,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (safeBrowsingLookup.whyPoint) noMsgWhyPoints.push(safeBrowsingLookup.whyPoint);
       if (ctLookup.whyPoint) noMsgWhyPoints.push(ctLookup.whyPoint);
       if (waybackLookup.whyPoint) noMsgWhyPoints.push(waybackLookup.whyPoint);
+      if (recruiterLocationLookup.whyPoint) noMsgWhyPoints.push(recruiterLocationLookup.whyPoint);
 
       return {
         risk_score: noMsgScore,
@@ -3045,6 +3046,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         safe_browsing: safeBrowsing,
         ct,
         wayback,
+        recruiter_location: recruiterLocation,
       };
     }
 
@@ -3350,6 +3352,39 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       summaryParts.push(`Website history: ${wayback.interpretation}`);
     }
 
+    // Recruiter public-location: contextual caution only. Country alone is
+    // never proof of fraud, so we only nudge the score when other weak trust
+    // signals are also present (caution-weight signals, header/domain issues,
+    // OSINT scam mentions, etc.). Otherwise we surface it informationally.
+    if (recruiterLocationLookup.whyPoint) why_points.push(recruiterLocationLookup.whyPoint);
+    if (recruiterLocation.available && recruiterLocation.mismatch) {
+      const otherWeakSignals =
+        matchedCaution.length > 0 ||
+        domainCheck.status === "unverifiable" ||
+        domainCheck.status === "lookalike" ||
+        domainCheck.status === "mismatch" ||
+        domainCheck.status === "public_email" ||
+        headerAuth.spf === "none" ||
+        headerAuth.dkim === "none" ||
+        headerAuth.dmarc === "none" ||
+        osint.scoreDelta > 0 ||
+        rdap.ageBucket === "very_new" ||
+        rdap.ageBucket === "new" ||
+        rdap.ageBucket === "young" ||
+        dns.health === "thin" ||
+        dns.health === "minimal" ||
+        dns.health === "missing";
+      if (otherWeakSignals) {
+        score = Math.min(100, score + recruiterLocationLookup.scoreDelta);
+      }
+      summaryParts.push(`${recruiterLocation.summary} ${recruiterLocation.caution_note ?? ""}`.trim());
+      findings.push(
+        `Recruiter public location appears to be ${recruiterLocation.recruiter_public_location} — differs from ${recruiterLocation.hiring_context_label}.`,
+      );
+    } else if (recruiterLocation.available && recruiterLocation.recruiter_public_location) {
+      summaryParts.push(recruiterLocation.summary);
+    }
+
     return {
       risk_score: score,
       risk_level: level,
@@ -3366,5 +3401,6 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       safe_browsing: safeBrowsing,
       ct,
       wayback,
+      recruiter_location: recruiterLocation,
     };
   });
