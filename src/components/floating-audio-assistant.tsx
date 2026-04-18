@@ -115,22 +115,21 @@ export function FloatingAudioAssistant({
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2 sm:bottom-6 sm:right-6"
+      className="fixed bottom-4 right-4 z-50 flex items-end justify-end gap-2 sm:bottom-6 sm:right-6"
       role="region"
       aria-label="Accessibility audio assistant"
     >
-      {/* Subtitle strip — sits above the orb visually */}
+      {/* Subtitle strip — sits to the LEFT of the orb so motion never covers it */}
       <div
         aria-live="polite"
         aria-atomic="true"
         className={cn(
-          "pointer-events-none relative z-20 max-w-[min(22rem,calc(100vw-3rem))] origin-bottom-right transition-all duration-300 ease-out",
-          showSubtitle ? "opacity-100 scale-100 translate-y-0" : "opacity-0 scale-95 translate-y-1",
+          "pointer-events-none relative z-30 max-w-[min(20rem,calc(100vw-7rem))] origin-bottom-right transition-all duration-300 ease-out",
+          showSubtitle ? "opacity-100 scale-100 translate-x-0" : "opacity-0 scale-95 translate-x-1 pointer-events-none",
         )}
       >
         {showSubtitle && currentLine && (
           <div
-            // Inverted contrast: dark bubble in light mode, light bubble in dark mode
             className="rounded-2xl border border-foreground/10 bg-foreground px-3.5 py-2 text-xs leading-snug text-background shadow-[0_10px_30px_-10px_rgba(0,0,0,0.45)] sm:text-sm"
             key={`${activeKey}-${activeLine}`}
           >
@@ -160,8 +159,8 @@ export function FloatingAudioAssistant({
         )}
       </div>
 
-      {/* Controls row */}
-      <div className="relative z-10 flex items-end gap-2">
+      {/* Controls column — trigger + orb stacked on the right */}
+      <div className="relative z-10 flex flex-col items-end gap-2">
         {/* Speech-bubble trigger — explicit "start reading" control */}
         {!hasStarted && (
           <button
