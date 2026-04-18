@@ -719,20 +719,6 @@ function ResultsView({
                           href={l.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          onClick={(e) => {
-                            // Force open in a real new tab — escapes embedded
-                            // preview iframes that can otherwise block sites
-                            // like LinkedIn with ERR_BLOCKED_BY_RESPONSE.
-                            e.preventDefault();
-                            try {
-                              const w = window.open(l.url, "_blank", "noopener,noreferrer");
-                              if (!w && typeof window !== "undefined") {
-                                window.top?.location.assign(l.url);
-                              }
-                            } catch {
-                              window.location.href = l.url;
-                            }
-                          }}
                           className="break-all text-primary underline-offset-4 hover:underline"
                           title="Opens in a new tab"
                         >

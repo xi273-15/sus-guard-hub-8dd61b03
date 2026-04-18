@@ -43,11 +43,12 @@ function ConfidenceChip({ level }: { level: "low" | "medium" | "high" | "unknown
   return (
     <span
       className={cn(
-        "inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+        "inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider leading-none",
         cls,
       )}
+      title={`${level} confidence`}
     >
-      {level} confidence
+      {level}
     </span>
   );
 }
@@ -59,11 +60,11 @@ function StatusChip({ status }: { status: "available" | "limited" | "unavailable
       : status === "limited"
         ? "text-amber-500 border-amber-500/30 bg-amber-500/10"
         : "border-border/60 bg-background/60 text-muted-foreground";
-  const label = status === "available" ? "Estimate found" : status === "limited" ? "Limited data" : "No data";
+  const label = status === "available" ? "Found" : status === "limited" ? "Limited" : "No data";
   return (
     <span
       className={cn(
-        "inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+        "inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider leading-none",
         cls,
       )}
     >
@@ -76,7 +77,7 @@ function RecruiterLocationBlock({ result }: { result: AnalysisResult }) {
   const loc = result.recruiter_location;
   return (
     <div className="rounded-xl border border-border/60 bg-background/40 p-3.5">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           <MapPin className="h-3.5 w-3.5 text-primary" />
           Recruiter location
@@ -117,7 +118,7 @@ function TrafficContextBlock({ result }: { result: AnalysisResult }) {
   const t = result.website_traffic;
   return (
     <div className="rounded-xl border border-border/60 bg-background/40 p-3.5">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           <Globe2 className="h-3.5 w-3.5 text-primary" />
           Website traffic context
