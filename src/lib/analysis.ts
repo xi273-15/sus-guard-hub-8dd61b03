@@ -74,6 +74,23 @@ export type SafeBrowsingResult = {
   error?: string;
 };
 
+export type CtHistoryBucket = "very_recent" | "recent" | "normal" | "established" | "none" | "unknown";
+
+export type CtResult = {
+  available: boolean;
+  domain: string | null;
+  certificatesFound: boolean;
+  totalCertificates: number; // count returned (capped)
+  mostRecentIssuance: string | null; // ISO
+  oldestIssuance: string | null; // ISO
+  uniqueSubdomains: string[]; // up to ~12 most relevant
+  suspiciousSubdomains: string[]; // lookalike / phishing-style names
+  history: CtHistoryBucket;
+  summary: string;
+  interpretation: string;
+  error?: string;
+};
+
 export type AnalysisResult = {
   risk_score: number;
   risk_level: RiskLevel;
@@ -88,6 +105,7 @@ export type AnalysisResult = {
   rdap: RdapResult;
   dns: DnsResult;
   safe_browsing: SafeBrowsingResult;
+  ct: CtResult;
 };
 
 type SignalKind = "scam" | "caution" | "positive";
@@ -1661,6 +1679,299 @@ async function runSafeBrowsing(input: {
 }
 
 
+// ---------- Certificate Transparency (crt.sh) ----------
+function emptyCt(domain: string | null, summary: string, error?: string): CtResult {
+  return {
+    available: false,
+    domain,
+    certificatesFound: false,
+    totalCertificates: 0,
+    mostRecentIssuance: null,
+    oldestIssuance: null,
+    uniqueSubdomains: [],
+    suspiciousSubdomains: [],
+    history: "unknown",
+    summary,
+    interpretation: summary,
+    error,
+  };
+}
+
+const SUSPICIOUS_SUBDOMAIN_TERMS = [
+  "login",
+  "secure",
+  "verify",
+  "verification",
+  "account",
+  "signin",
+  "auth",
+  "wallet",
+  "recover",
+  "reset",
+  "support",
+  "billing",
+  "invoice",
+  "payment",
+  "pay",
+  "update",
+  "confirm",
+  "mail",
+  "webmail",
+  "drive",
+  "docs",
+  "sharepoint",
+  "office365",
+  "okta",
+  "sso",
+];
+
+type CrtShEntry = {
+  name_value?: string;
+  common_name?: string;
+  not_before?: string;
+  entry_timestamp?: string;
+};
+
+async function runCtLookup(input: {
+  recruiterEmail?: string;
+}): Promise<{
+  result: CtResult;
+  scoreDelta: number;
+  floor: number;
+  whyPoint: WhyPoint | null;
+  nextStep: string | null;
+}> {
+  const senderDomain = input.recruiterEmail ? extractEmailDomain(input.recruiterEmail) : null;
+  if (!senderDomain) {
+    return {
+      result: emptyCt(null, "No recruiter email provided, so certificate history could not be checked."),
+      scoreDelta: 0,
+      floor: 0,
+      whyPoint: null,
+      nextStep: null,
+    };
+  }
+  if (PUBLIC_EMAIL_DOMAINS.has(senderDomain)) {
+    return {
+      result: emptyCt(
+        senderDomain,
+        "Sender uses a public mailbox provider (Gmail, Outlook, etc.), so certificate history doesn't apply to the sender's own domain.",
+      ),
+      scoreDelta: 0,
+      floor: 0,
+      whyPoint: null,
+      nextStep: null,
+    };
+  }
+
+  const lookupDomain = rootDomain(senderDomain);
+
+  let entries: CrtShEntry[] = [];
+  try {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 8000);
+    const res = await fetch(
+      `https://crt.sh/?q=${encodeURIComponent("%." + lookupDomain)}&output=json`,
+      {
+        headers: { Accept: "application/json", "User-Agent": "suscruit-ct-check/1.0" },
+        signal: ac.signal,
+      },
+    );
+    clearTimeout(timer);
+    if (!res.ok) {
+      return {
+        result: emptyCt(
+          lookupDomain,
+          `Certificate Transparency lookup did not return data for ${lookupDomain}, so its certificate history could not be established.`,
+          `http_${res.status}`,
+        ),
+        scoreDelta: 0,
+        floor: 0,
+        whyPoint: null,
+        nextStep: null,
+      };
+    }
+    const json = (await res.json()) as CrtShEntry[];
+    if (Array.isArray(json)) entries = json;
+  } catch (err) {
+    return {
+      result: emptyCt(
+        lookupDomain,
+        `Certificate Transparency lookup failed for ${lookupDomain}, so its certificate history could not be established.`,
+        err instanceof Error ? err.message : "unknown_error",
+      ),
+      scoreDelta: 0,
+      floor: 0,
+      whyPoint: null,
+      nextStep: null,
+    };
+  }
+
+  if (entries.length === 0) {
+    const summary = `No public certificates were found for ${lookupDomain} in Certificate Transparency logs.`;
+    return {
+      result: {
+        available: true,
+        domain: lookupDomain,
+        certificatesFound: false,
+        totalCertificates: 0,
+        mostRecentIssuance: null,
+        oldestIssuance: null,
+        uniqueSubdomains: [],
+        suspiciousSubdomains: [],
+        history: "none",
+        summary,
+        interpretation: `${summary} Most legitimately operated domains have a visible certificate history. This is a mild caution, not proof of fraud.`,
+      },
+      scoreDelta: 5,
+      floor: 0,
+      whyPoint: {
+        finding: `No certificate history found for ${lookupDomain} in public CT logs.`,
+        why: "Most actively used domains have at least one TLS certificate logged in Certificate Transparency. The absence of any history is unusual for a working recruiting domain.",
+        severity: "caution",
+      },
+      nextStep: null,
+    };
+  }
+
+  // Aggregate
+  const subdomainSet = new Set<string>();
+  let oldest = Number.POSITIVE_INFINITY;
+  let newest = Number.NEGATIVE_INFINITY;
+
+  for (const e of entries) {
+    const names = (e.name_value ?? e.common_name ?? "")
+      .split(/\n|,/)
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s && !s.startsWith("*."));
+    for (const n of names) {
+      if (n === lookupDomain || n.endsWith("." + lookupDomain)) {
+        subdomainSet.add(n);
+      }
+    }
+    const dateStr = e.not_before ?? e.entry_timestamp;
+    if (dateStr) {
+      const t = Date.parse(dateStr);
+      if (!Number.isNaN(t)) {
+        if (t < oldest) oldest = t;
+        if (t > newest) newest = t;
+      }
+    }
+  }
+
+  const allSubs = Array.from(subdomainSet);
+  const mostRecentIssuance = newest > 0 ? new Date(newest).toISOString() : null;
+  const oldestIssuance = oldest < Number.POSITIVE_INFINITY ? new Date(oldest).toISOString() : null;
+
+  const now = Date.now();
+  const ageDaysOldest =
+    oldest < Number.POSITIVE_INFINITY ? Math.floor((now - oldest) / 86_400_000) : null;
+  const daysSinceNewest = newest > 0 ? Math.floor((now - newest) / 86_400_000) : null;
+
+  // Suspicious subdomain detection
+  const suspicious = allSubs.filter((s) => {
+    const label = s.replace("." + lookupDomain, "").replace(lookupDomain, "");
+    return SUSPICIOUS_SUBDOMAIN_TERMS.some((t) => label.includes(t));
+  });
+
+  // History bucket
+  let history: CtHistoryBucket;
+  if (ageDaysOldest === null) history = "unknown";
+  else if (ageDaysOldest < 30) history = "very_recent";
+  else if (ageDaysOldest < 180) history = "recent";
+  else if (ageDaysOldest < 730) history = "normal";
+  else history = "established";
+
+  const total = entries.length;
+  const subsForUi = allSubs.slice(0, 12);
+
+  let scoreDelta = 0;
+  let floor = 0;
+  let whyPoint: WhyPoint | null = null;
+  let nextStep: string | null = null;
+  let interpretation: string;
+
+  const recencyText =
+    daysSinceNewest !== null
+      ? daysSinceNewest === 0
+        ? "today"
+        : `${daysSinceNewest} day${daysSinceNewest === 1 ? "" : "s"} ago`
+      : "unknown date";
+
+  const summary = `${total} certificate${total === 1 ? "" : "s"} found · ${allSubs.length} subdomain${allSubs.length === 1 ? "" : "s"} · most recent issuance ${recencyText}${suspicious.length > 0 ? ` · ${suspicious.length} suspicious-looking subdomain${suspicious.length === 1 ? "" : "s"}` : ""}`;
+
+  if (history === "very_recent") {
+    interpretation = `${lookupDomain}'s earliest visible certificate is only ${ageDaysOldest} day${ageDaysOldest === 1 ? "" : "s"} old. Very fresh certificate history can be normal for a brand-new domain, but it's a mild-to-moderate caution for a recruiter contact — especially if the domain also has thin DNS or recent registration.`;
+    scoreDelta = 8;
+    whyPoint = {
+      finding: `${lookupDomain} has a very recent certificate history (first seen ${ageDaysOldest} day${ageDaysOldest === 1 ? "" : "s"} ago).`,
+      why: interpretation,
+      severity: "caution",
+    };
+    nextStep = `Treat ${lookupDomain} with extra caution — its TLS certificates are very fresh, which is unusual for an established employer.`;
+  } else if (history === "recent") {
+    interpretation = `${lookupDomain}'s certificate history goes back about ${ageDaysOldest} day${ageDaysOldest === 1 ? "" : "s"}. Not very long, but not unusual on its own. Combine with other signals before drawing conclusions.`;
+    scoreDelta = 3;
+    whyPoint = {
+      finding: `${lookupDomain} has a fairly recent certificate history (about ${ageDaysOldest} days).`,
+      why: interpretation,
+      severity: "info",
+    };
+  } else if (history === "normal") {
+    interpretation = `${lookupDomain} has a normal certificate history (~${Math.round((ageDaysOldest ?? 0) / 30)} months of issuance). Consistent with a regularly operated domain.`;
+    scoreDelta = -1;
+    whyPoint = {
+      finding: `${lookupDomain} has a normal certificate history.`,
+      why: interpretation,
+      severity: "info",
+    };
+  } else {
+    // established
+    interpretation = `${lookupDomain} has an established certificate history (over 2 years of TLS issuance). Consistent with a long-running, legitimately operated domain — though not proof on its own.`;
+    scoreDelta = -2;
+    whyPoint = {
+      finding: `${lookupDomain} has an established certificate history.`,
+      why: interpretation,
+      severity: "good",
+    };
+  }
+
+  if (suspicious.length > 0) {
+    const examples = suspicious.slice(0, 3).join(", ");
+    interpretation = `${interpretation} Notable subdomains in CT logs look phishing-style (${examples}${suspicious.length > 3 ? ", …" : ""}). That can indicate the domain has been used to host login or verification pages.`;
+    scoreDelta += 8;
+    whyPoint = {
+      finding: `${lookupDomain} has phishing-style subdomains in CT logs (${examples}${suspicious.length > 3 ? ", …" : ""}).`,
+      why: "Subdomains containing words like 'login', 'verify', 'secure', or 'wallet' are commonly used to host credential-harvesting pages. Their presence in CT logs is a meaningful caution signal.",
+      severity: "bad",
+    };
+    nextStep =
+      nextStep ??
+      `Be cautious — ${lookupDomain} has subdomains in public CT logs that look like login or verification pages.`;
+  }
+
+  return {
+    result: {
+      available: true,
+      domain: lookupDomain,
+      certificatesFound: true,
+      totalCertificates: total,
+      mostRecentIssuance,
+      oldestIssuance,
+      uniqueSubdomains: subsForUi,
+      suspiciousSubdomains: suspicious.slice(0, 6),
+      history,
+      summary,
+      interpretation,
+    },
+    scoreDelta,
+    floor,
+    whyPoint,
+    nextStep,
+  };
+}
+
+
 export const analyzeRecruiter = createServerFn({ method: "POST" })
   .inputValidator((input: AnalysisInput) => input)
   .handler(async ({ data }): Promise<AnalysisResult> => {
@@ -1669,7 +1980,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const domainCheck = analyzeDomainAlignment(data.recruiterEmail, data.companyDomain);
 
     // ---------- Tavily OSINT + RDAP + DNS (server-side only, in parallel) ----------
-    const [osint, rdapLookup, dnsLookup, safeBrowsingLookup] = await Promise.all([
+    const [osint, rdapLookup, dnsLookup, safeBrowsingLookup, ctLookup] = await Promise.all([
       runTavilyOsint({
         recruiterName: data.recruiterName,
         companyName: data.companyName,
@@ -1686,10 +1997,14 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       runSafeBrowsing({
         companyDomain: data.companyDomain,
       }),
+      runCtLookup({
+        recruiterEmail: data.recruiterEmail,
+      }),
     ]);
     const rdap = rdapLookup.result;
     const dns = dnsLookup.result;
     const safeBrowsing = safeBrowsingLookup.result;
+    const ct = ctLookup.result;
     type HeaderAuthCheck = {
       spf: "pass" | "fail" | "softfail" | "none" | "unknown";
       dkim: "pass" | "fail" | "none" | "unknown";
@@ -2027,6 +2342,18 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         baseFindings.push(safeBrowsing.safe_browsing_summary);
       }
       if (safeBrowsingLookup.nextStep) baseSteps.push(safeBrowsingLookup.nextStep);
+      if (ctLookup.scoreDelta > 0) {
+        noMsgScore = Math.min(95, noMsgScore + ctLookup.scoreDelta);
+      } else if (ctLookup.scoreDelta < 0) {
+        noMsgScore = Math.max(0, noMsgScore + ctLookup.scoreDelta);
+      }
+      if (ctLookup.floor > 0) noMsgScore = Math.max(noMsgScore, ctLookup.floor);
+      if (ct.available && ct.certificatesFound) {
+        baseFindings.push(`CT for ${ct.domain}: ${ct.summary}`);
+      } else if (ct.available && !ct.certificatesFound) {
+        baseFindings.push(`No CT certificates found for ${ct.domain}`);
+      }
+      if (ctLookup.nextStep) baseSteps.push(ctLookup.nextStep);
 
       const noMsgLevel = levelFor(noMsgScore);
 
@@ -2046,6 +2373,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (rdapLookup.whyPoint) noMsgWhyPoints.push(rdapLookup.whyPoint);
       if (dnsLookup.whyPoint) noMsgWhyPoints.push(dnsLookup.whyPoint);
       if (safeBrowsingLookup.whyPoint) noMsgWhyPoints.push(safeBrowsingLookup.whyPoint);
+      if (ctLookup.whyPoint) noMsgWhyPoints.push(ctLookup.whyPoint);
 
       return {
         risk_score: noMsgScore,
@@ -2065,6 +2393,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         rdap,
         dns,
         safe_browsing: safeBrowsing,
+        ct,
       };
     }
 
@@ -2107,6 +2436,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     score += rdapLookup.scoreDelta;
     score += dnsLookup.scoreDelta;
     score += safeBrowsingLookup.scoreDelta;
+    score += ctLookup.scoreDelta;
 
     // Cap how much positive wording can lower the score. Strong red flags
     // (high-weight scam signals or domain mismatch/lookalike/public_email)
@@ -2142,6 +2472,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     }
     if (safeBrowsingLookup.floor > 0) {
       score = Math.max(score, safeBrowsingLookup.floor);
+    }
+    if (ctLookup.floor > 0) {
+      score = Math.max(score, ctLookup.floor);
     }
     score = Math.max(0, Math.min(100, Math.round(score)));
     const level = levelFor(score);
@@ -2338,6 +2671,18 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       summaryParts.push(`Site reputation: ${safeBrowsing.safe_browsing_summary}`);
     }
 
+    // CT findings, why-point, next step, and audio summary
+    if (ct.available && ct.certificatesFound) {
+      findings.push(`CT for ${ct.domain}: ${ct.summary}`);
+    }
+    if (ctLookup.whyPoint) why_points.push(ctLookup.whyPoint);
+    if (ctLookup.nextStep && next_steps.length < 6 && !next_steps.includes(ctLookup.nextStep)) {
+      next_steps.push(ctLookup.nextStep);
+    }
+    if (ct.available) {
+      summaryParts.push(`Certificate history: ${ct.interpretation}`);
+    }
+
     return {
       risk_score: score,
       risk_level: level,
@@ -2352,5 +2697,6 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       rdap,
       dns,
       safe_browsing: safeBrowsing,
+      ct,
     };
   });

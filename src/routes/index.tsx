@@ -21,6 +21,7 @@ import {
   CalendarClock,
   Network,
   ShieldCheck,
+  ScrollText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,7 +36,7 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/theme-toggle";
-import type { RdapResult, DnsResult, SafeBrowsingResult } from "@/lib/analysis";
+import type { RdapResult, DnsResult, SafeBrowsingResult, CtResult } from "@/lib/analysis";
 import { analyzeRecruiter, type AnalysisResult } from "@/lib/analysis";
 import { FloatingAudioAssistant } from "@/components/floating-audio-assistant";
 
@@ -615,6 +616,17 @@ function Index() {
           >
             {result && <SafeBrowsingCardBody safeBrowsing={result.safe_browsing} />}
           </ResultCard>
+
+          <ResultCard
+            icon={<ScrollText className="h-4 w-4" />}
+            title="Certificate history"
+            description="Public TLS certificate issuance history for the recruiter's email domain (Certificate Transparency logs)."
+            full
+            loading={loading}
+            hasData={!!result}
+          >
+            {result && <CtCardBody ct={result.ct} />}
+          </ResultCard>
         </section>
 
         <footer className="mt-16 border-t border-border/60 pt-8 pb-6 text-center text-sm text-muted-foreground">
@@ -981,6 +993,95 @@ function SafeBrowsingCardBody({ safeBrowsing }: { safeBrowsing: SafeBrowsingResu
       <p className="text-sm leading-relaxed text-muted-foreground">
         {safeBrowsing.safe_browsing_summary}
       </p>
+    </div>
+  );
+}
+
+function CtCardBody({ ct }: { ct: CtResult }) {
+  if (!ct.available) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm leading-relaxed text-foreground/90">{ct.summary}</p>
+        <p className="text-sm leading-relaxed text-muted-foreground">{ct.interpretation}</p>
+      </div>
+    );
+  }
+
+  const historyStyles: Record<CtResult["history"], string> = {
+    very_recent: "text-rose-500 border-rose-500/30 bg-rose-500/10",
+    recent: "text-amber-500 border-amber-500/30 bg-amber-500/10",
+    normal: "text-foreground/80 border-border/60 bg-background/60",
+    established: "text-emerald-500 border-emerald-500/30 bg-emerald-500/10",
+    none: "text-amber-500 border-amber-500/30 bg-amber-500/10",
+    unknown: "border-border/60 bg-background/60 text-muted-foreground",
+  };
+  const historyLabel: Record<CtResult["history"], string> = {
+    very_recent: "Very recent issuance",
+    recent: "Recent issuance",
+    normal: "Normal history",
+    established: "Established history",
+    none: "No certificates found",
+    unknown: "Unknown",
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <RdapField label="Checked domain" value={ct.domain ?? "—"} mono />
+        <div className="rounded-md border border-border/60 bg-background/40 px-3 py-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            History
+          </p>
+          <span
+            className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${historyStyles[ct.history]}`}
+          >
+            {historyLabel[ct.history]}
+          </span>
+        </div>
+        <RdapField
+          label="Certificates found"
+          value={ct.certificatesFound ? String(ct.totalCertificates) : "0"}
+        />
+        <RdapField label="Most recent issuance" value={formatDate(ct.mostRecentIssuance)} />
+      </div>
+
+      {ct.suspiciousSubdomains.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Suspicious-looking subdomains
+          </p>
+          <ul className="mt-1 flex flex-wrap gap-1.5">
+            {ct.suspiciousSubdomains.map((s, i) => (
+              <li
+                key={i}
+                className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 font-mono text-[10px] text-rose-500 break-all"
+              >
+                {s}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {ct.uniqueSubdomains.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Subdomains in CT logs
+          </p>
+          <ul className="mt-1 flex flex-wrap gap-1.5 font-mono text-[11px] text-foreground/80">
+            {ct.uniqueSubdomains.map((s, i) => (
+              <li
+                key={i}
+                className="rounded-md border border-border/60 bg-background/40 px-2 py-0.5 break-all"
+              >
+                {s}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <p className="text-sm leading-relaxed text-muted-foreground">{ct.interpretation}</p>
     </div>
   );
 }
