@@ -1609,14 +1609,32 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       let noMsgScore = 0;
       const authDelta = headerAuth.scoreDelta;
       const authFloor = headerAuth.floor;
-      if (domainCheck.scoreDelta > 0 || authDelta > 0 || osint.scoreDelta > 0) {
-        noMsgScore = Math.min(85, 15 + domainCheck.scoreDelta + authDelta + Math.max(0, osint.scoreDelta));
+      if (
+        domainCheck.scoreDelta > 0 ||
+        authDelta > 0 ||
+        osint.scoreDelta > 0 ||
+        rdapLookup.scoreDelta > 0
+      ) {
+        noMsgScore = Math.min(
+          85,
+          15 +
+            domainCheck.scoreDelta +
+            authDelta +
+            Math.max(0, osint.scoreDelta) +
+            Math.max(0, rdapLookup.scoreDelta),
+        );
       }
       if (osint.scoreDelta < 0) noMsgScore = Math.max(0, noMsgScore + osint.scoreDelta);
+      if (rdapLookup.scoreDelta < 0) noMsgScore = Math.max(0, noMsgScore + rdapLookup.scoreDelta);
       if (domainCheck.floor > 0) noMsgScore = Math.max(noMsgScore, domainCheck.floor);
       if (authFloor > 0) noMsgScore = Math.max(noMsgScore, authFloor);
+      if (rdapLookup.floor > 0) noMsgScore = Math.max(noMsgScore, rdapLookup.floor);
       osint.result.findings.forEach((f) => baseFindings.push(f));
       osint.nextSteps.forEach((s) => baseSteps.push(s));
+      if (rdap.available) {
+        baseFindings.push(`Domain ${rdap.domain}: ${rdap.ageSummary}`);
+      }
+      if (rdapLookup.nextStep) baseSteps.push(rdapLookup.nextStep);
 
       const noMsgLevel = levelFor(noMsgScore);
 
@@ -1633,6 +1651,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       }
       headerAuth.explanations.forEach((e) => noMsgWhyPoints.push(e));
       osint.whyPoints.forEach((p) => noMsgWhyPoints.push(p));
+      if (rdapLookup.whyPoint) noMsgWhyPoints.push(rdapLookup.whyPoint);
 
       return {
         risk_score: noMsgScore,
@@ -1649,6 +1668,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         osint_summary: osint.result.summary,
         osint_findings: osint.result.findings,
         osint_links: osint.result.links,
+        rdap,
       };
     }
 
