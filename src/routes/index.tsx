@@ -482,6 +482,250 @@ function Field({
   );
 }
 
+function ResultsView({
+  result,
+  input,
+  onReset,
+}: {
+  result: AnalysisResult;
+  input: FormState;
+  onReset: () => void;
+}) {
+  const [openCategory, setOpenCategory] = useState<
+    "email" | "company" | "recruiter" | null
+  >(null);
+
+  const split = useMemo(
+    () => splitOsint(result, input.recruiterName, input.companyName, input.companyDomain),
+    [result, input.recruiterName, input.companyName, input.companyDomain],
+  );
+
+  const eStats = useMemo(() => emailStats(result), [result]);
+  const cStats = useMemo(() => companyStats(result, split), [result, split]);
+  const rStats = useMemo(
+    () => recruiterStats(input.recruiterName, split),
+    [input.recruiterName, split],
+  );
+
+  const tagline = useMemo(() => {
+    const all = [eStats, cStats, rStats];
+    const good = all.reduce((s, x) => s + x.good, 0);
+    const caution = all.reduce((s, x) => s + x.caution, 0);
+    const bad = all.reduce((s, x) => s + x.bad, 0);
+    const parts: string[] = [];
+    if (good) parts.push(`${good} positive signal${good > 1 ? "s" : ""}`);
+    if (caution) parts.push(`${caution} caution${caution > 1 ? "s" : ""}`);
+    if (bad) parts.push(`${bad} red flag${bad > 1 ? "s" : ""}`);
+    return parts.length
+      ? `${parts.join(" · ")} across email, company, and recruiter checks.`
+      : "Analysis complete — explore the categories below for details.";
+  }, [eStats, cStats, rStats]);
+
+  return (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3">
+        <Button type="button" variant="outline" size="sm" onClick={onReset} className="gap-2">
+          <ArrowLeft className="h-4 w-4" />
+          Check another recruiter
+        </Button>
+        <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+          Analysis results
+        </span>
+      </div>
+
+      {/* Tier 1 — Hero */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        <RiskOverview result={result} tagline={tagline} />
+        <InteractiveTrio result={result} />
+      </div>
+
+      {/* Tier 2 — Category tiles */}
+      <section aria-labelledby="categories-heading" className="space-y-4">
+        <div>
+          <h2
+            id="categories-heading"
+            className="text-xl font-semibold tracking-tight sm:text-2xl"
+          >
+            Detailed signals
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Tap a card to dive into the findings behind the score.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <CategoryTile
+            icon={<Mail className="h-5 w-5" />}
+            title="Email findings"
+            subtitle="Sender identity, authentication & infrastructure"
+            stats={eStats}
+            onClick={() => setOpenCategory("email")}
+          />
+          <CategoryTile
+            icon={<Building2 className="h-5 w-5" />}
+            title="Company / domain"
+            subtitle="Website history, reputation & registration"
+            stats={cStats}
+            onClick={() => setOpenCategory("company")}
+          />
+          <CategoryTile
+            icon={<User className="h-5 w-5" />}
+            title="Recruiter"
+            subtitle="Public information about the person"
+            stats={rStats}
+            onClick={() => setOpenCategory("recruiter")}
+          />
+        </div>
+      </section>
+
+      {/* Modals */}
+      <CategoryModal
+        open={openCategory === "email"}
+        onOpenChange={(o) => !o && setOpenCategory(null)}
+        icon={<Mail className="h-4 w-4" />}
+        title="Email findings"
+        voiceText={emailVoiceText(result)}
+        voiceKey="results:email-modal"
+      >
+        <FindingSection title="DNS & email infrastructure">
+          <DnsCardBody dns={result.dns} />
+        </FindingSection>
+        <FindingSection title="Sender domain registration">
+          <RdapCardBody rdap={result.rdap} />
+        </FindingSection>
+      </CategoryModal>
+
+      <CategoryModal
+        open={openCategory === "company"}
+        onOpenChange={(o) => !o && setOpenCategory(null)}
+        icon={<Building2 className="h-4 w-4" />}
+        title="Company & domain findings"
+        voiceText={companyVoiceText(result, split)}
+        voiceKey="results:company-modal"
+      >
+        {(split.company.findings.length > 0 || split.company.links.length > 0) && (
+          <FindingSection title="Public web evidence">
+            {split.company.findings.length > 0 && (
+              <ul className="space-y-2">
+                {split.company.findings.map((f, i) => (
+                  <li key={i} className="flex gap-2 text-sm leading-relaxed">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {split.company.links.length > 0 && (
+              <ul className="mt-3 space-y-1.5">
+                {split.company.links.map((l, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm leading-relaxed">
+                    <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/80" />
+                    <a
+                      href={l.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="break-all text-primary underline-offset-4 hover:underline"
+                    >
+                      {l.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </FindingSection>
+        )}
+        <FindingSection title="Website history (Wayback Machine)">
+          <WaybackCardBody wayback={result.wayback} />
+        </FindingSection>
+        <FindingSection title="Site reputation (Safe Browsing)">
+          <SafeBrowsingCardBody safeBrowsing={result.safe_browsing} />
+        </FindingSection>
+        <FindingSection title="Certificate history (CT logs)">
+          <CtCardBody ct={result.ct} />
+        </FindingSection>
+      </CategoryModal>
+
+      <CategoryModal
+        open={openCategory === "recruiter"}
+        onOpenChange={(o) => !o && setOpenCategory(null)}
+        icon={<User className="h-4 w-4" />}
+        title="Recruiter / individual findings"
+        voiceText={recruiterVoiceText(input.recruiterName, split)}
+        voiceKey="results:recruiter-modal"
+      >
+        <FindingSection title="Who reached out">
+          <div className="space-y-1 text-sm">
+            <p>
+              <span className="text-muted-foreground">Name:</span>{" "}
+              <span className="font-medium text-foreground">
+                {input.recruiterName || "Not provided"}
+              </span>
+            </p>
+            <p>
+              <span className="text-muted-foreground">Email:</span>{" "}
+              <span className="font-mono text-xs text-foreground/90">
+                {input.recruiterEmail || "Not provided"}
+              </span>
+            </p>
+            <p>
+              <span className="text-muted-foreground">Claimed company:</span>{" "}
+              <span className="font-medium text-foreground">
+                {input.companyName || "Not provided"}
+              </span>
+            </p>
+          </div>
+        </FindingSection>
+
+        <FindingSection title="Public information found">
+          {split.recruiter.findings.length > 0 || split.recruiter.links.length > 0 ? (
+            <>
+              {split.recruiter.findings.length > 0 && (
+                <ul className="space-y-2">
+                  {split.recruiter.findings.map((f, i) => (
+                    <li key={i} className="flex gap-2 text-sm leading-relaxed">
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {split.recruiter.links.length > 0 && (
+                <ul className="mt-3 space-y-1.5">
+                  {split.recruiter.links.map((l, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm leading-relaxed">
+                      <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/80" />
+                      <a
+                        href={l.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="break-all text-primary underline-offset-4 hover:underline"
+                      >
+                        {l.title}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : (
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              We didn't find clear public information about this person tied to the
+              claimed role and company. That's not necessarily a red flag — many
+              legitimate recruiters keep a low public profile.
+            </p>
+          )}
+          <p className="mt-3 text-xs italic leading-relaxed text-muted-foreground">
+            Double-check public profile links — search results may include other
+            people with similar names. Look for a profile that explicitly mentions
+            the claimed role and company.
+          </p>
+        </FindingSection>
+      </CategoryModal>
+    </div>
+  );
+}
+
 
 
 function ResultCard({
