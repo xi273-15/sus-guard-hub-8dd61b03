@@ -1296,14 +1296,6 @@ async function runRdapLookup(input: {
 }
 
 
-  return {
-    result: { summary, findings, links: dedupeLinks(allLinks) },
-    scoreDelta,
-    whyPoints,
-    nextSteps,
-  };
-}
-
 export const analyzeRecruiter = createServerFn({ method: "POST" })
   .inputValidator((input: AnalysisInput) => input)
   .handler(async ({ data }): Promise<AnalysisResult> => {
