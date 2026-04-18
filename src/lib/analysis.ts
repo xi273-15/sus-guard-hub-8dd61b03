@@ -1315,6 +1315,175 @@ async function runRdapLookup(input: {
   return { result, scoreDelta, floor, whyPoint, nextStep };
 }
 
+// ---------- DNS / email infrastructure lookup (DoH) ----------
+
+type DohAnswer = { name?: string; type?: number; TTL?: number; data?: string };
+type DohResponse = { Status?: number; Answer?: DohAnswer[] };
+
+function emptyDns(domain: string | null, error?: string, summary?: string, interpretation?: string): DnsResult {
+  return {
+    available: false,
+    domain,
+    hasMx: false,
+    hasSpf: false,
+    hasDmarc: false,
+    hasA: false,
+    hasAaaa: false,
+    mxRecords: [],
+    spfRecord: null,
+    dmarcRecord: null,
+    health: error === "public_mailbox" ? "skipped" : "unknown",
+    summary:
+      summary ??
+      (error === "public_mailbox"
+        ? "DNS check skipped — recruiter is using a public mailbox provider, where these records belong to the provider, not the sender."
+        : "We couldn't perform a DNS check for this domain."),
+    interpretation:
+      interpretation ??
+      (error === "public_mailbox"
+        ? "DNS / email infrastructure checks only make sense for company-owned domains."
+        : "Treat this as 'unknown' rather than safe or unsafe."),
+    error,
+  };
+}
+
+async function dohQuery(name: string, type: string): Promise<DohAnswer[]> {
+  try {
+    const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=${type}`;
+    const res = await fetch(url, { headers: { Accept: "application/dns-json" } });
+    if (!res.ok) return [];
+    const data = (await res.json()) as DohResponse;
+    return data.Answer ?? [];
+  } catch (err) {
+    console.error(`DoH ${type} error for ${name}:`, err);
+    return [];
+  }
+}
+
+function stripQuotes(s: string): string {
+  // DoH TXT data is often wrapped in quotes, possibly multi-string concatenated.
+  return s.replace(/"\s*"/g, "").replace(/^"|"$/g, "");
+}
+
+async function runDnsLookup(input: {
+  recruiterEmail?: string;
+  companyName?: string;
+}): Promise<{ result: DnsResult; scoreDelta: number; floor: number; whyPoint: WhyPoint | null; nextStep: string | null }> {
+  const senderDomain = input.recruiterEmail ? extractEmailDomain(input.recruiterEmail) : null;
+  if (!senderDomain) {
+    return { result: emptyDns(null, "no_sender_domain"), scoreDelta: 0, floor: 0, whyPoint: null, nextStep: null };
+  }
+  if (PUBLIC_EMAIL_DOMAINS.has(senderDomain)) {
+    return { result: emptyDns(senderDomain, "public_mailbox"), scoreDelta: 0, floor: 0, whyPoint: null, nextStep: null };
+  }
+
+  const lookupDomain = rootDomain(senderDomain);
+
+  const [mxAns, txtAns, aAns, aaaaAns, dmarcAns] = await Promise.all([
+    dohQuery(lookupDomain, "MX"),
+    dohQuery(lookupDomain, "TXT"),
+    dohQuery(lookupDomain, "A"),
+    dohQuery(lookupDomain, "AAAA"),
+    dohQuery(`_dmarc.${lookupDomain}`, "TXT"),
+  ]);
+
+  const mxRecords = mxAns
+    .map((a) => (a.data ?? "").trim())
+    .filter(Boolean)
+    .slice(0, 6);
+  const hasMx = mxRecords.length > 0;
+  const hasA = aAns.some((a) => !!a.data);
+  const hasAaaa = aaaaAns.some((a) => !!a.data);
+
+  const txtStrings = txtAns.map((a) => stripQuotes((a.data ?? "").trim())).filter(Boolean);
+  const spfRecord = txtStrings.find((s) => /^v=spf1\b/i.test(s)) ?? null;
+  const hasSpf = !!spfRecord;
+
+  const dmarcStrings = dmarcAns.map((a) => stripQuotes((a.data ?? "").trim())).filter(Boolean);
+  const dmarcRecord = dmarcStrings.find((s) => /^v=DMARC1\b/i.test(s)) ?? null;
+  const hasDmarc = !!dmarcRecord;
+
+  // Health buckets
+  let health: DnsHealth;
+  if (!hasMx && !hasA && !hasAaaa) health = "missing";
+  else if (!hasMx) health = "minimal";
+  else if (hasMx && hasSpf && hasDmarc) health = "healthy";
+  else health = "thin";
+
+  const parts: string[] = [];
+  parts.push(hasMx ? `MX present (${mxRecords.length} record${mxRecords.length === 1 ? "" : "s"})` : "MX missing");
+  parts.push(hasSpf ? "SPF present" : "SPF missing");
+  parts.push(hasDmarc ? "DMARC present" : "DMARC missing");
+  parts.push(hasA || hasAaaa ? "A/AAAA present" : "A/AAAA missing");
+  const summary = parts.join(" · ");
+
+  let interpretation: string;
+  let scoreDelta = 0;
+  let floor = 0;
+  let whyPoint: WhyPoint | null = null;
+  let nextStep: string | null = null;
+
+  if (health === "missing") {
+    interpretation = `${lookupDomain} has no mail (MX) and no web (A/AAAA) records. A real recruiting domain almost always has both. This is a strong concern, though not proof of malicious intent on its own.`;
+    scoreDelta = 18;
+    floor = 30;
+    whyPoint = {
+      finding: `${lookupDomain} has no MX, A, or AAAA records.`,
+      why: interpretation,
+      severity: "bad",
+    };
+    nextStep = `Be very cautious — ${lookupDomain} doesn't appear to host normal email or web infrastructure. Verify the recruiter through the official company website.`;
+  } else if (health === "minimal") {
+    interpretation = `${lookupDomain} has web records but no MX records, meaning it isn't set up to receive email normally. A domain actively sending recruiter mail without MX is a meaningful caution.`;
+    scoreDelta = 12;
+    floor = 20;
+    whyPoint = {
+      finding: `${lookupDomain} has no MX records.`,
+      why: interpretation,
+      severity: "bad",
+    };
+    nextStep = `Treat ${lookupDomain} with caution — it isn't configured to receive email. Confirm the recruiter through an official, separate channel.`;
+  } else if (health === "thin") {
+    const missing: string[] = [];
+    if (!hasSpf) missing.push("SPF");
+    if (!hasDmarc) missing.push("DMARC");
+    interpretation = `${lookupDomain} has working email infrastructure (MX${hasA || hasAaaa ? " and web records" : ""}) but is missing ${missing.join(" and ")}. Many small or older domains skip these — it's a mild caution, not proof of fraud.`;
+    scoreDelta = missing.length === 2 ? 5 : 3;
+    whyPoint = {
+      finding: `${lookupDomain} is missing ${missing.join(" and ")} record${missing.length === 1 ? "" : "s"}.`,
+      why: interpretation,
+      severity: "caution",
+    };
+  } else {
+    // healthy
+    interpretation = `${lookupDomain} has normal email infrastructure: MX records for receiving mail, plus SPF and DMARC for sender authentication. This is consistent with a legitimately operated domain.`;
+    scoreDelta = -3;
+    whyPoint = {
+      finding: `${lookupDomain} has normal email infrastructure (MX + SPF + DMARC).`,
+      why: interpretation,
+      severity: "good",
+    };
+  }
+
+  const result: DnsResult = {
+    available: true,
+    domain: lookupDomain,
+    hasMx,
+    hasSpf,
+    hasDmarc,
+    hasA,
+    hasAaaa,
+    mxRecords,
+    spfRecord,
+    dmarcRecord,
+    health,
+    summary,
+    interpretation,
+  };
+
+  return { result, scoreDelta, floor, whyPoint, nextStep };
+}
+
 
 export const analyzeRecruiter = createServerFn({ method: "POST" })
   .inputValidator((input: AnalysisInput) => input)
@@ -1323,8 +1492,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const lower = message.toLowerCase();
     const domainCheck = analyzeDomainAlignment(data.recruiterEmail, data.companyDomain);
 
-    // ---------- Tavily OSINT + RDAP (server-side only, in parallel) ----------
-    const [osint, rdapLookup] = await Promise.all([
+    // ---------- Tavily OSINT + RDAP + DNS (server-side only, in parallel) ----------
+    const [osint, rdapLookup, dnsLookup] = await Promise.all([
       runTavilyOsint({
         recruiterName: data.recruiterName,
         companyName: data.companyName,
@@ -1334,8 +1503,13 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         recruiterEmail: data.recruiterEmail,
         companyName: data.companyName,
       }),
+      runDnsLookup({
+        recruiterEmail: data.recruiterEmail,
+        companyName: data.companyName,
+      }),
     ]);
     const rdap = rdapLookup.result;
+    const dns = dnsLookup.result;
     type HeaderAuthCheck = {
       spf: "pass" | "fail" | "softfail" | "none" | "unknown";
       dkim: "pass" | "fail" | "none" | "unknown";
