@@ -22,6 +22,7 @@ import {
   Network,
   ShieldCheck,
   ScrollText,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,7 +37,13 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/theme-toggle";
-import type { RdapResult, DnsResult, SafeBrowsingResult, CtResult } from "@/lib/analysis";
+import type {
+  RdapResult,
+  DnsResult,
+  SafeBrowsingResult,
+  CtResult,
+  WaybackResult,
+} from "@/lib/analysis";
 import { analyzeRecruiter, type AnalysisResult } from "@/lib/analysis";
 import { FloatingAudioAssistant } from "@/components/floating-audio-assistant";
 
