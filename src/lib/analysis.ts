@@ -7,6 +7,8 @@ export type AnalysisInput = {
   companyDomain?: string;
   message?: string;
   headers?: string;
+  /** Optional claimed job/role location, e.g. "Berlin", "Remote-EU", "San Francisco". */
+  roleLocation?: string;
 };
 
 export type RiskLevel = "Low" | "Caution" | "High" | "Likely Scam";
@@ -42,6 +44,8 @@ export type RdapResult = {
   ageBucket: RdapAgeBucket;
   ageSummary: string;
   interpretation: string;
+  /** ISO 3166-1 alpha-2 country code from registrant address, when present. */
+  registrantCountry: string | null;
   error?: string;
 };
 
@@ -111,6 +115,28 @@ export type WaybackResult = {
   error?: string;
 };
 
+export type LocationConfidence = "low" | "medium" | "high" | "unknown";
+
+export type RecruiterLocationResult = {
+  available: boolean;
+  /** Free-form location string, e.g. "Berlin, Germany" or "United Kingdom". */
+  recruiter_public_location: string | null;
+  /** ISO 3166-1 alpha-2 country code when known. */
+  recruiter_country: string | null;
+  location_confidence: LocationConfidence;
+  /** Short human-readable description of where this came from. */
+  location_source: string | null;
+  /** Comparison context used (e.g. "Berlin (claimed role)" or "United States (company HQ)"). */
+  hiring_context_label: string | null;
+  hiring_context_country: string | null;
+  /** True if recruiter country differs from hiring context country (only when both known). */
+  mismatch: boolean;
+  /** One-line user-facing summary. */
+  summary: string;
+  /** Optional caution note, only set when mismatch is true. */
+  caution_note: string | null;
+};
+
 export type AnalysisResult = {
   risk_score: number;
   risk_level: RiskLevel;
@@ -127,6 +153,7 @@ export type AnalysisResult = {
   safe_browsing: SafeBrowsingResult;
   ct: CtResult;
   wayback: WaybackResult;
+  recruiter_location: RecruiterLocationResult;
 };
 
 type SignalKind = "scam" | "caution" | "positive";
@@ -1168,8 +1195,35 @@ function emptyRdap(domain: string | null, error?: string): RdapResult {
     ageSummary: "Domain registration data could not be reliably retrieved.",
     interpretation:
       "We couldn't pull RDAP registration data for this domain, so domain age can't factor into the risk score. Treat this as 'unknown' rather than safe or unsafe.",
+    registrantCountry: null,
     error,
   };
+}
+
+/**
+ * Extract a registrant country (ISO 3166-1 alpha-2 if available, otherwise free text)
+ * from RDAP entities. Looks across registrant/admin/tech roles.
+ */
+function extractRegistrantCountry(entities: RdapEntity[] | undefined): string | null {
+  if (!entities) return null;
+  const ROLES = ["registrant", "administrative", "technical"];
+  for (const e of entities) {
+    if (!e.roles?.some((r) => ROLES.includes(r))) continue;
+    const vcard = e.vcardArray as unknown[] | undefined;
+    if (!Array.isArray(vcard) || vcard.length < 2 || !Array.isArray(vcard[1])) continue;
+    for (const entry of vcard[1] as unknown[]) {
+      if (!Array.isArray(entry) || entry[0] !== "adr") continue;
+      const params = entry[1] as Record<string, unknown> | undefined;
+      const cc = params && typeof params.cc === "string" ? (params.cc as string) : null;
+      if (cc && /^[A-Za-z]{2}$/.test(cc)) return cc.toUpperCase();
+      const adrValue = entry[3];
+      if (Array.isArray(adrValue)) {
+        const country = adrValue[adrValue.length - 1];
+        if (typeof country === "string" && country.trim().length > 0) return country.trim();
+      }
+    }
+  }
+  return null;
 }
 
 function extractRegistrarName(entities: RdapEntity[] | undefined): string | null {
@@ -1291,6 +1345,7 @@ async function runRdapLookup(input: {
   const registrationDate = regEvent?.eventDate ?? null;
   const lastUpdated = updEvent?.eventDate ?? null;
   const registrar = extractRegistrarName(rdap.entities);
+  const registrantCountry = extractRegistrantCountry(rdap.entities);
 
   let ageDays: number | null = null;
   if (registrationDate) {
@@ -1321,6 +1376,7 @@ async function runRdapLookup(input: {
     ageBucket: bucket,
     ageSummary: summary,
     interpretation,
+    registrantCountry,
   };
 
   let scoreDelta = 0;
@@ -2208,6 +2264,336 @@ async function runWayback(input: {
 }
 
 
+// ---------- Recruiter public-location discovery ----------
+// Cautionary, contextual signal only. Country alone never proves fraud — it
+// only matters when combined with other weak trust signals.
+
+const COUNTRY_NAME_TO_CODE: Record<string, string> = {
+  "united states": "US", "usa": "US", "u.s.": "US", "u.s.a.": "US", "america": "US",
+  "united kingdom": "GB", "uk": "GB", "britain": "GB", "england": "GB", "scotland": "GB", "wales": "GB",
+  "germany": "DE", "deutschland": "DE",
+  "france": "FR",
+  "spain": "ES", "españa": "ES",
+  "italy": "IT",
+  "netherlands": "NL", "holland": "NL",
+  "belgium": "BE",
+  "ireland": "IE",
+  "portugal": "PT",
+  "switzerland": "CH",
+  "austria": "AT",
+  "sweden": "SE",
+  "norway": "NO",
+  "denmark": "DK",
+  "finland": "FI",
+  "poland": "PL",
+  "czech republic": "CZ", "czechia": "CZ",
+  "romania": "RO",
+  "greece": "GR",
+  "turkey": "TR",
+  "russia": "RU",
+  "ukraine": "UA",
+  "canada": "CA",
+  "mexico": "MX",
+  "brazil": "BR",
+  "argentina": "AR",
+  "chile": "CL",
+  "colombia": "CO",
+  "australia": "AU",
+  "new zealand": "NZ",
+  "india": "IN",
+  "pakistan": "PK",
+  "bangladesh": "BD",
+  "china": "CN",
+  "hong kong": "HK",
+  "taiwan": "TW",
+  "japan": "JP",
+  "south korea": "KR", "korea": "KR",
+  "singapore": "SG",
+  "malaysia": "MY",
+  "indonesia": "ID",
+  "philippines": "PH",
+  "thailand": "TH",
+  "vietnam": "VN",
+  "uae": "AE", "united arab emirates": "AE",
+  "saudi arabia": "SA",
+  "israel": "IL",
+  "egypt": "EG",
+  "south africa": "ZA",
+  "nigeria": "NG",
+  "kenya": "KE",
+  "morocco": "MA",
+};
+
+function normalizeCountryToCode(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  if (/^[A-Z]{2}$/.test(trimmed)) return trimmed.toUpperCase();
+  const lower = trimmed.toLowerCase();
+  if (COUNTRY_NAME_TO_CODE[lower]) return COUNTRY_NAME_TO_CODE[lower];
+  // Try last token (handles "Berlin, Germany")
+  const lastPart = lower.split(",").pop()?.trim() ?? "";
+  if (lastPart && COUNTRY_NAME_TO_CODE[lastPart]) return COUNTRY_NAME_TO_CODE[lastPart];
+  return null;
+}
+
+function emptyRecruiterLocation(reason: string): RecruiterLocationResult {
+  return {
+    available: false,
+    recruiter_public_location: null,
+    recruiter_country: null,
+    location_confidence: "unknown",
+    location_source: null,
+    hiring_context_label: null,
+    hiring_context_country: null,
+    mismatch: false,
+    summary: reason,
+    caution_note: null,
+  };
+}
+
+type LocationAiResult = {
+  location: string | null;
+  country: string | null;
+  confidence: "low" | "medium" | "high";
+  source: string | null;
+};
+
+async function extractRecruiterLocationViaAi(args: {
+  recruiterName: string;
+  companyName: string;
+  message: string;
+  headers: string;
+  osintFindings: string[];
+  osintLinks: OsintLink[];
+}): Promise<LocationAiResult | null> {
+  const apiKey = process.env.LOVABLE_API_KEY;
+  if (!apiKey) {
+    console.warn("LOVABLE_API_KEY not configured — skipping recruiter location extraction.");
+    return null;
+  }
+
+  // Compact context. Keep it small to keep latency/cost down.
+  const links = args.osintLinks
+    .slice(0, 6)
+    .map((l) => `- ${l.title} — ${l.url}`)
+    .join("\n");
+  const findings = args.osintFindings.slice(0, 6).map((f) => `- ${f}`).join("\n");
+  const trimmedMsg = args.message.length > 1500 ? args.message.slice(0, 1500) + "…" : args.message;
+  const trimmedHeaders = args.headers.length > 1500 ? args.headers.slice(0, 1500) + "…" : args.headers;
+
+  const userContent = [
+    `Recruiter name: ${args.recruiterName || "(unknown)"}`,
+    `Claimed company: ${args.companyName || "(unknown)"}`,
+    "",
+    "Public web findings about them:",
+    findings || "(none)",
+    "",
+    "Public links:",
+    links || "(none)",
+    "",
+    "Recruiter message (look for signature, phone country code, address):",
+    trimmedMsg || "(none)",
+    "",
+    "Email headers (look for X-Originating-IP region hints, server hostnames):",
+    trimmedHeaders || "(none)",
+  ].join("\n");
+
+  try {
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-3-flash-preview",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You identify the most likely PUBLIC, professional location of a recruiter from public-web evidence. " +
+              "Use only what's in the provided text. Prefer LinkedIn/team-page locations and email-signature addresses. " +
+              "Phone country codes are weaker evidence. Never guess. If unclear, return location=null and confidence=low. " +
+              "Return ISO 3166-1 alpha-2 country codes when possible.",
+          },
+          { role: "user", content: userContent },
+        ],
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "report_recruiter_location",
+              description: "Report the most likely public location for the recruiter.",
+              parameters: {
+                type: "object",
+                properties: {
+                  location: {
+                    type: ["string", "null"],
+                    description:
+                      "Best free-form location (e.g. 'Berlin, Germany', 'London, UK'). Null if unknown.",
+                  },
+                  country: {
+                    type: ["string", "null"],
+                    description: "ISO 3166-1 alpha-2 country code (e.g. 'DE', 'US'). Null if unknown.",
+                  },
+                  confidence: {
+                    type: "string",
+                    enum: ["low", "medium", "high"],
+                    description:
+                      "high = explicit profile/signature location; medium = strong contextual evidence; low = weak hints only.",
+                  },
+                  source: {
+                    type: ["string", "null"],
+                    description:
+                      "Short human-readable source, e.g. 'LinkedIn profile', 'email signature', 'company team page', 'phone country code'.",
+                  },
+                },
+                required: ["location", "country", "confidence", "source"],
+                additionalProperties: false,
+              },
+            },
+          },
+        ],
+        tool_choice: { type: "function", function: { name: "report_recruiter_location" } },
+      }),
+    });
+
+    if (!res.ok) {
+      console.error(`Recruiter-location AI failed [${res.status}]`);
+      return null;
+    }
+    const json = (await res.json()) as {
+      choices?: { message?: { tool_calls?: { function?: { arguments?: string } }[] } }[];
+    };
+    const argsStr = json.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
+    if (!argsStr) return null;
+    const parsed = JSON.parse(argsStr) as Partial<LocationAiResult>;
+    return {
+      location: typeof parsed.location === "string" && parsed.location.trim() ? parsed.location.trim() : null,
+      country: typeof parsed.country === "string" && parsed.country.trim() ? parsed.country.trim().toUpperCase() : null,
+      confidence: parsed.confidence === "high" || parsed.confidence === "medium" ? parsed.confidence : "low",
+      source: typeof parsed.source === "string" && parsed.source.trim() ? parsed.source.trim() : null,
+    };
+  } catch (err) {
+    console.error("Recruiter-location AI error:", err);
+    return null;
+  }
+}
+
+async function runRecruiterLocation(args: {
+  recruiterName?: string;
+  companyName?: string;
+  roleLocation?: string;
+  message?: string;
+  headers?: string;
+  osintFindings: string[];
+  osintLinks: OsintLink[];
+  rdapCountry: string | null;
+}): Promise<{ result: RecruiterLocationResult; scoreDelta: number; whyPoint: WhyPoint | null }> {
+  const recruiterName = (args.recruiterName ?? "").trim();
+  const companyName = (args.companyName ?? "").trim();
+  const message = args.message ?? "";
+  const headers = args.headers ?? "";
+
+  // Determine hiring context (preferred: explicit role location; fallback: company HQ from RDAP)
+  const role = (args.roleLocation ?? "").trim();
+  let hiringLabel: string | null = null;
+  let hiringCountry: string | null = null;
+  if (role) {
+    hiringLabel = `${role} (claimed role location)`;
+    hiringCountry = normalizeCountryToCode(role);
+  } else if (args.rdapCountry) {
+    const code = normalizeCountryToCode(args.rdapCountry);
+    hiringLabel = `${args.rdapCountry} (company HQ via domain registration)`;
+    hiringCountry = code;
+  }
+
+  // Need at least some signal to even attempt extraction.
+  const hasContext =
+    recruiterName.length > 0 ||
+    args.osintFindings.length > 0 ||
+    args.osintLinks.length > 0 ||
+    message.length > 0 ||
+    headers.length > 0;
+
+  if (!hasContext) {
+    return {
+      result: emptyRecruiterLocation(
+        "Not enough public information to estimate the recruiter's location.",
+      ),
+      scoreDelta: 0,
+      whyPoint: null,
+    };
+  }
+
+  const ai = await extractRecruiterLocationViaAi({
+    recruiterName,
+    companyName,
+    message,
+    headers,
+    osintFindings: args.osintFindings,
+    osintLinks: args.osintLinks,
+  });
+
+  if (!ai || !ai.location) {
+    return {
+      result: {
+        ...emptyRecruiterLocation(
+          "We couldn't pin down a clear public location for this recruiter. Absence of a public location is not a red flag on its own.",
+        ),
+        hiring_context_label: hiringLabel,
+        hiring_context_country: hiringCountry,
+      },
+      scoreDelta: 0,
+      whyPoint: null,
+    };
+  }
+
+  const recruiterCountry = ai.country || normalizeCountryToCode(ai.location);
+  const mismatch =
+    !!recruiterCountry && !!hiringCountry && recruiterCountry.toUpperCase() !== hiringCountry.toUpperCase();
+
+  const sourceText = ai.source ? ` based on ${ai.source}` : "";
+  const summary = `Recruiter public location appears to be ${ai.location}${sourceText}. (${ai.confidence} confidence)`;
+
+  let cautionNote: string | null = null;
+  let whyPoint: WhyPoint | null = null;
+  let scoreDelta = 0;
+
+  if (mismatch) {
+    cautionNote =
+      "This differs from the claimed hiring/company context and may warrant extra verification. " +
+      "Cross-border recruiter outreach is not inherently fraudulent, but it should be verified carefully, especially when combined with other weak trust signals.";
+    whyPoint = {
+      finding: `Recruiter's public location (${ai.location}) appears to differ from the claimed hiring context (${hiringLabel}).`,
+      why: cautionNote,
+      severity: "caution",
+    };
+    // Very small bump only — handler will optionally amplify when other weak
+    // signals are present. Country alone is never proof.
+    scoreDelta = ai.confidence === "high" ? 3 : ai.confidence === "medium" ? 2 : 1;
+  }
+
+  return {
+    result: {
+      available: true,
+      recruiter_public_location: ai.location,
+      recruiter_country: recruiterCountry,
+      location_confidence: ai.confidence,
+      location_source: ai.source,
+      hiring_context_label: hiringLabel,
+      hiring_context_country: hiringCountry,
+      mismatch,
+      summary,
+      caution_note: cautionNote,
+    },
+    scoreDelta,
+    whyPoint,
+  };
+}
+
+
 export const analyzeRecruiter = createServerFn({ method: "POST" })
   .inputValidator((input: AnalysisInput) => input)
   .handler(async ({ data }): Promise<AnalysisResult> => {
@@ -2245,6 +2631,19 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const safeBrowsing = safeBrowsingLookup.result;
     const ct = ctLookup.result;
     const wayback = waybackLookup.result;
+
+    // Recruiter public-location discovery (depends on Tavily + RDAP being done).
+    const recruiterLocationLookup = await runRecruiterLocation({
+      recruiterName: data.recruiterName,
+      companyName: data.companyName,
+      roleLocation: data.roleLocation,
+      message: data.message,
+      headers: data.headers,
+      osintFindings: osint.result.findings,
+      osintLinks: osint.result.links,
+      rdapCountry: rdap.registrantCountry,
+    });
+    const recruiterLocation = recruiterLocationLookup.result;
     type HeaderAuthCheck = {
       spf: "pass" | "fail" | "softfail" | "none" | "unknown";
       dkim: "pass" | "fail" | "none" | "unknown";
@@ -2625,6 +3024,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (safeBrowsingLookup.whyPoint) noMsgWhyPoints.push(safeBrowsingLookup.whyPoint);
       if (ctLookup.whyPoint) noMsgWhyPoints.push(ctLookup.whyPoint);
       if (waybackLookup.whyPoint) noMsgWhyPoints.push(waybackLookup.whyPoint);
+      if (recruiterLocationLookup.whyPoint) noMsgWhyPoints.push(recruiterLocationLookup.whyPoint);
 
       return {
         risk_score: noMsgScore,
@@ -2646,6 +3046,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         safe_browsing: safeBrowsing,
         ct,
         wayback,
+        recruiter_location: recruiterLocation,
       };
     }
 
@@ -2951,6 +3352,39 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       summaryParts.push(`Website history: ${wayback.interpretation}`);
     }
 
+    // Recruiter public-location: contextual caution only. Country alone is
+    // never proof of fraud, so we only nudge the score when other weak trust
+    // signals are also present (caution-weight signals, header/domain issues,
+    // OSINT scam mentions, etc.). Otherwise we surface it informationally.
+    if (recruiterLocationLookup.whyPoint) why_points.push(recruiterLocationLookup.whyPoint);
+    if (recruiterLocation.available && recruiterLocation.mismatch) {
+      const otherWeakSignals =
+        matchedCaution.length > 0 ||
+        domainCheck.status === "unverifiable" ||
+        domainCheck.status === "lookalike" ||
+        domainCheck.status === "mismatch" ||
+        domainCheck.status === "public_email" ||
+        headerAuth.spf === "none" ||
+        headerAuth.dkim === "none" ||
+        headerAuth.dmarc === "none" ||
+        osint.scoreDelta > 0 ||
+        rdap.ageBucket === "very_new" ||
+        rdap.ageBucket === "new" ||
+        rdap.ageBucket === "young" ||
+        dns.health === "thin" ||
+        dns.health === "minimal" ||
+        dns.health === "missing";
+      if (otherWeakSignals) {
+        score = Math.min(100, score + recruiterLocationLookup.scoreDelta);
+      }
+      summaryParts.push(`${recruiterLocation.summary} ${recruiterLocation.caution_note ?? ""}`.trim());
+      findings.push(
+        `Recruiter public location appears to be ${recruiterLocation.recruiter_public_location} — differs from ${recruiterLocation.hiring_context_label}.`,
+      );
+    } else if (recruiterLocation.available && recruiterLocation.recruiter_public_location) {
+      summaryParts.push(recruiterLocation.summary);
+    }
+
     return {
       risk_score: score,
       risk_level: level,
@@ -2967,5 +3401,6 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       safe_browsing: safeBrowsing,
       ct,
       wayback,
+      recruiter_location: recruiterLocation,
     };
   });
