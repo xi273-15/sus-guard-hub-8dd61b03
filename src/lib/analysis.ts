@@ -2436,8 +2436,11 @@ async function extractRecruiterLocationViaAi(args: {
             role: "system",
             content:
               "You identify the most likely PUBLIC, professional location of a recruiter from public-web evidence. " +
-              "Use only what's in the provided text. Prefer LinkedIn/team-page locations and email-signature addresses. " +
-              "Phone country codes are weaker evidence. Never guess. If unclear, return location=null and confidence=low. " +
+              "Use only what's in the provided text — do NOT invent facts. " +
+              "Prefer LinkedIn/team-page locations and email-signature addresses (high confidence). " +
+              "Treat strong contextual evidence (company HQ clearly tied to the recruiter, regional employer) as medium confidence. " +
+              "Treat weaker hints (phone country code, OSINT snippet mentioning a city/country near the recruiter's name, language/timezone clues) as low confidence — and STILL return them as a best-guess location with confidence='low' and a clear source, rather than returning null. " +
+              "Only return location=null when there is genuinely zero locational signal anywhere in the provided text. " +
               "Return ISO 3166-1 alpha-2 country codes when possible.",
           },
           { role: "user", content: userContent },
