@@ -694,6 +694,57 @@ function ResultsView({
           </div>
         </FindingSection>
 
+        <FindingSection title="Public location">
+          {result.recruiter_location.available && result.recruiter_location.recruiter_public_location ? (
+            <div className="space-y-2 text-sm">
+              <p>
+                <span className="text-muted-foreground">Location:</span>{" "}
+                <span className="font-medium text-foreground">
+                  {result.recruiter_location.recruiter_public_location}
+                </span>
+              </p>
+              <p>
+                <span className="text-muted-foreground">Confidence:</span>{" "}
+                <span
+                  className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                    result.recruiter_location.location_confidence === "high"
+                      ? "text-emerald-500 border-emerald-500/30 bg-emerald-500/10"
+                      : result.recruiter_location.location_confidence === "medium"
+                        ? "text-amber-500 border-amber-500/30 bg-amber-500/10"
+                        : "border-border/60 bg-background/60 text-muted-foreground"
+                  }`}
+                >
+                  {result.recruiter_location.location_confidence}
+                </span>
+              </p>
+              {result.recruiter_location.location_source && (
+                <p>
+                  <span className="text-muted-foreground">Source:</span>{" "}
+                  <span className="text-foreground/90">{result.recruiter_location.location_source}</span>
+                </p>
+              )}
+              {result.recruiter_location.hiring_context_label && (
+                <p>
+                  <span className="text-muted-foreground">Compared to:</span>{" "}
+                  <span className="text-foreground/90">{result.recruiter_location.hiring_context_label}</span>
+                </p>
+              )}
+              {result.recruiter_location.mismatch && result.recruiter_location.caution_note && (
+                <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+                  <p className="font-medium">
+                    Recruiter public location appears to differ from the claimed hiring context.
+                  </p>
+                  <p className="mt-1">{result.recruiter_location.caution_note}</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {result.recruiter_location.summary}
+            </p>
+          )}
+        </FindingSection>
+
         <FindingSection title="Public information found">
           {split.recruiter.findings.length > 0 || split.recruiter.links.length > 0 ? (
             <>
