@@ -616,6 +616,17 @@ function Index() {
           >
             {result && <SafeBrowsingCardBody safeBrowsing={result.safe_browsing} />}
           </ResultCard>
+
+          <ResultCard
+            icon={<ScrollText className="h-4 w-4" />}
+            title="Certificate history"
+            description="Public TLS certificate issuance history for the recruiter's email domain (Certificate Transparency logs)."
+            full
+            loading={loading}
+            hasData={!!result}
+          >
+            {result && <CtCardBody ct={result.ct} />}
+          </ResultCard>
         </section>
 
         <footer className="mt-16 border-t border-border/60 pt-8 pb-6 text-center text-sm text-muted-foreground">
