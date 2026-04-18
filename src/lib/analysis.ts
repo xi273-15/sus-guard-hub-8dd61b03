@@ -1913,6 +1913,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     score += domainCheck.scoreDelta;
     score += osint.scoreDelta;
     score += rdapLookup.scoreDelta;
+    score += dnsLookup.scoreDelta;
 
     // Cap how much positive wording can lower the score. Strong red flags
     // (high-weight scam signals or domain mismatch/lookalike/public_email)
