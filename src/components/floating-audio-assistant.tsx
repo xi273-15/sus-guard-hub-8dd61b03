@@ -161,7 +161,7 @@ export function FloatingAudioAssistant({
           <button
             type="button"
             onClick={handleTriggerClick}
-            disabled={!hasContent || status === "loading"}
+            disabled={!hasContent}
             aria-label={triggerLabel}
             title={!hasContent ? "Audio not available yet" : triggerLabel}
             className={cn(
