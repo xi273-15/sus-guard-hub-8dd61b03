@@ -793,8 +793,24 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       }
 
       // DKIM
+      // Common false-positive: a forwarder, mailing list, or security gateway
+      // (Proofpoint, Mimecast, university filters, etc.) rewrote the body, which
+      // breaks the original DKIM body hash even though the email is legitimate.
+      // Telltale signs: "body hash did not verify" AND DMARC still passes
+      // and/or Outlook's compauth says pass.
+      const dkimBodyHashFail = /dkim=fail[^;]*body hash/i.test(raw);
+      const compauthPass = /compauth=pass/i.test(lower);
+      const dmarcLooksOk = dmarcStatus === "pass" || dmarcStatus === "bestguesspass";
+      const dkimLikelyForwarderBreak = (dkimStatus === "fail") && dkimBodyHashFail && (dmarcLooksOk || compauthPass);
+
       if (dkimStatus === "pass") {
         result.dkim = "pass";
+      } else if (dkimLikelyForwarderBreak) {
+        // Treat as informational, not a red flag.
+        result.dkim = "pass";
+        result.findings.push("The email's digital signature (DKIM) didn't match exactly, but other checks (DMARC and the receiving mail server) say it's still legitimate.");
+        result.reasons.push("This usually happens when a mail forwarder, mailing list, or company security filter slightly changes the email on its way to you — which breaks the original 'wax seal' even though the sender is real. Because DMARC still passed, the email is most likely genuine.");
+        result.scoreDelta += 2;
       } else if (dkimStatus === "fail" || dkimStatus === "permerror") {
         result.dkim = "fail";
         result.findings.push("The email's digital signature (DKIM) failed — the message may have been faked or changed.");
