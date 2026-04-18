@@ -20,7 +20,9 @@ export function CategoryModal({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[88vh] overflow-y-auto rounded-2xl border-border/60 bg-card/95 p-0 shadow-[var(--shadow-elegant)] backdrop-blur-xl sm:max-w-2xl">
+      <DialogContent
+        className="max-h-[88vh] overflow-y-auto rounded-2xl border-border/60 bg-card/95 p-0 shadow-[var(--shadow-elegant)] backdrop-blur-xl sm:max-w-2xl !slide-in-from-left-0 !slide-in-from-top-0 !slide-out-to-left-0 !slide-out-to-top-0 data-[state=open]:zoom-in-[0.98] data-[state=closed]:zoom-out-[0.98] duration-300"
+      >
         <div
           aria-hidden
           className="h-1 w-full"
