@@ -2351,5 +2351,6 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       osint_links: osint.result.links,
       rdap,
       dns,
+      safe_browsing: safeBrowsing,
     };
   });
