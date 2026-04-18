@@ -274,6 +274,8 @@ function Index() {
                         id="companyName"
                         label="Company name"
                         icon={<Building2 className="h-3.5 w-3.5" />}
+                        speakText="The company the recruiter says they work for. We compare it against their email domain and website to spot mismatches."
+                        speakKey="field:companyName"
                       >
                         <Input
                           id="companyName"
@@ -286,6 +288,8 @@ function Index() {
                         id="companyDomain"
                         label="Company website"
                         icon={<Globe className="h-3.5 w-3.5" />}
+                        speakText="The website of the company they mention. We check its history, certificate record, and whether Google Safe Browsing has flagged it."
+                        speakKey="field:companyDomain"
                       >
                         <Input
                           id="companyDomain"
@@ -295,6 +299,7 @@ function Index() {
                         />
                       </Field>
                     </div>
+
                   </FormSection>
 
                   <Separator className="bg-border/60" />
