@@ -262,7 +262,7 @@ export function FloatingAudioAssistant({
             {status === "loading" ? (
               <Loader2 className="h-6 w-6 animate-spin" />
             ) : status === "playing" ? (
-              <Pause className="h-6 w-6 fill-current" />
+              <Square className="h-5 w-5 fill-current" />
             ) : status === "paused" ? (
               <Play className="h-6 w-6 fill-current" />
             ) : (
