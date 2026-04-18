@@ -137,6 +137,28 @@ export type RecruiterLocationResult = {
   caution_note: string | null;
 };
 
+export type TrafficEstimateStatus = "available" | "limited" | "unavailable";
+
+export type WebsiteTrafficResult = {
+  /** The bare domain we checked (no scheme, no path). Null if no domain was provided. */
+  checked_domain: string | null;
+  /** Did we find any usable third-party traffic-estimate signals? */
+  traffic_estimate_status: TrafficEstimateStatus;
+  /** Up to ~5 estimated top countries / regions where audience appears concentrated. */
+  estimated_top_countries: string[];
+  /** Plain-English one-liner about visibility (always third-party estimates). */
+  estimated_visibility_summary: string;
+  /** Short interpretive note (mismatch warning OR neutral context). */
+  traffic_context_note: string;
+  /** Names of third-party sources consulted (e.g. ["Cloudflare Radar", "Similarweb"]). */
+  sources: string[];
+  /** True only when estimated geography appears to differ from the claimed hiring context AND we have at least medium confidence. */
+  geo_mismatch: boolean;
+  /** Comparison context label (e.g. "Berlin (claimed role location)"). */
+  hiring_context_label: string | null;
+  hiring_context_country: string | null;
+};
+
 export type AnalysisResult = {
   risk_score: number;
   risk_level: RiskLevel;
@@ -154,6 +176,7 @@ export type AnalysisResult = {
   ct: CtResult;
   wayback: WaybackResult;
   recruiter_location: RecruiterLocationResult;
+  website_traffic: WebsiteTrafficResult;
 };
 
 type SignalKind = "scam" | "caution" | "positive";
