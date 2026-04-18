@@ -11,7 +11,7 @@ export type AnalysisInput = {
 
 export type RiskLevel = "Low" | "Caution" | "High" | "Likely Scam";
 
-export type HeaderExplanation = {
+export type WhyPoint = {
   finding: string;
   why: string;
   severity: "good" | "info" | "caution" | "bad";
@@ -22,9 +22,9 @@ export type AnalysisResult = {
   risk_level: RiskLevel;
   findings: string[];
   why_it_matters: string;
+  why_points: WhyPoint[];
   next_steps: string[];
   audio_summary: string;
-  header_explanations: HeaderExplanation[];
 };
 
 type SignalKind = "scam" | "caution" | "positive";
