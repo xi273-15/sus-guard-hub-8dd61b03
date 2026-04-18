@@ -147,8 +147,16 @@ async function play(text: string, key: string) {
     return;
   }
 
-  // New track — teardown previous
+  // New track — stop any currently active audio first (single-stream guarantee)
   teardown();
+  setState({
+    status: "idle",
+    activeKey: null,
+    activeText: "",
+    currentTime: 0,
+    duration: 0,
+    level: 0,
+  });
   setState({
     status: "loading",
     activeKey: key,
