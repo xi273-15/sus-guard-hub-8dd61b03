@@ -1,5 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { SpeakButton } from "@/components/speak-button";
+import { HeadersHelpDialog } from "@/components/headers-help-dialog";
+import { ArrowLeft } from "lucide-react";
 import {
   Shield,
   ShieldAlert,
