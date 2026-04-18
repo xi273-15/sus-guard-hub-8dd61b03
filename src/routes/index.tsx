@@ -77,6 +77,7 @@ type FormState = {
   recruiterEmail: string;
   companyName: string;
   companyDomain: string;
+  roleLocation: string;
   message: string;
   headers: string;
 };
@@ -86,6 +87,7 @@ const initialForm: FormState = {
   recruiterEmail: "",
   companyName: "",
   companyDomain: "",
+  roleLocation: "",
   message: "",
   headers: "",
 };
@@ -301,6 +303,21 @@ function Index() {
                         />
                       </Field>
                     </div>
+                    <Field
+                      id="roleLocation"
+                      label="Job / role location"
+                      icon={<Globe className="h-3.5 w-3.5" />}
+                      hint="Optional · e.g. 'Berlin', 'Remote-EU', 'San Francisco'. We compare the recruiter's public location to this."
+                      speakText="Where the role is supposed to be based. We use this to compare against the recruiter's likely public location."
+                      speakKey="field:roleLocation"
+                    >
+                      <Input
+                        id="roleLocation"
+                        placeholder="e.g. Berlin or Remote-EU"
+                        value={form.roleLocation}
+                        onChange={update("roleLocation")}
+                      />
+                    </Field>
 
                   </FormSection>
 
