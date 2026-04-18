@@ -1854,6 +1854,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       headerAuth.explanations.forEach((e) => noMsgWhyPoints.push(e));
       osint.whyPoints.forEach((p) => noMsgWhyPoints.push(p));
       if (rdapLookup.whyPoint) noMsgWhyPoints.push(rdapLookup.whyPoint);
+      if (dnsLookup.whyPoint) noMsgWhyPoints.push(dnsLookup.whyPoint);
 
       return {
         risk_score: noMsgScore,
@@ -1871,6 +1872,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         osint_findings: osint.result.findings,
         osint_links: osint.result.links,
         rdap,
+        dns,
       };
     }
 
