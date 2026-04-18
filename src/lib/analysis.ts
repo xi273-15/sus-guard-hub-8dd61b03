@@ -1056,7 +1056,237 @@ async function runTavilyOsint(input: {
       why: "We couldn't find clear public sources tying this person to this company. This is not proof of a scam, but it's worth confirming through the company's official careers page or LinkedIn.",
       severity: "info",
     });
+}
+
+// ---------- RDAP domain registration lookup ----------
+
+type RdapEvent = { eventAction?: string; eventDate?: string };
+type RdapEntity = {
+  roles?: string[];
+  vcardArray?: unknown;
+  publicIds?: { type?: string; identifier?: string }[];
+};
+type RdapNameserver = { ldhName?: string; unicodeName?: string };
+type RdapDomainResponse = {
+  ldhName?: string;
+  unicodeName?: string;
+  events?: RdapEvent[];
+  entities?: RdapEntity[];
+  nameservers?: RdapNameserver[];
+  status?: string[];
+};
+
+function emptyRdap(domain: string | null, error?: string): RdapResult {
+  return {
+    available: false,
+    domain,
+    registrar: null,
+    registrationDate: null,
+    lastUpdated: null,
+    nameservers: [],
+    statuses: [],
+    ageDays: null,
+    ageBucket: "unknown",
+    ageSummary: "Domain registration data could not be reliably retrieved.",
+    interpretation:
+      "We couldn't pull RDAP registration data for this domain, so domain age can't factor into the risk score. Treat this as 'unknown' rather than safe or unsafe.",
+    error,
+  };
+}
+
+function extractRegistrarName(entities: RdapEntity[] | undefined): string | null {
+  if (!entities) return null;
+  for (const e of entities) {
+    if (!e.roles?.includes("registrar")) continue;
+    // vcardArray: ["vcard", [["version",{},"text","4.0"], ["fn",{},"text","NameCheap, Inc."], ...]]
+    const vcard = e.vcardArray as unknown[] | undefined;
+    if (Array.isArray(vcard) && vcard.length >= 2 && Array.isArray(vcard[1])) {
+      for (const entry of vcard[1] as unknown[]) {
+        if (Array.isArray(entry) && entry[0] === "fn" && typeof entry[3] === "string") {
+          return entry[3] as string;
+        }
+      }
+    }
+    const pid = e.publicIds?.find((p) => typeof p.identifier === "string");
+    if (pid?.identifier) return pid.identifier;
   }
+  return null;
+}
+
+function bucketAge(days: number | null): { bucket: RdapAgeBucket; summary: string } {
+  if (days === null) return { bucket: "unknown", summary: "Domain age unknown." };
+  if (days < 30) return { bucket: "very_new", summary: `Registered ${days} day${days === 1 ? "" : "s"} ago — very recently created.` };
+  if (days < 90) return { bucket: "new", summary: `Registered ${days} days ago — under 90 days old.` };
+  if (days < 365) {
+    const months = Math.max(1, Math.round(days / 30));
+    return { bucket: "young", summary: `Registered about ${months} month${months === 1 ? "" : "s"} ago — under a year old.` };
+  }
+  const years = Math.floor(days / 365);
+  return {
+    bucket: "established",
+    summary: `Registered about ${years} year${years === 1 ? "" : "s"} ago — an established domain.`,
+  };
+}
+
+function buildRdapInterpretation(
+  bucket: RdapAgeBucket,
+  domain: string,
+  companyName?: string,
+): string {
+  const orgClaim =
+    companyName && companyName.trim().length > 0
+      ? ` The recruiter claims to represent ${companyName.trim()}, which is worth weighing against this.`
+      : "";
+  switch (bucket) {
+    case "very_new":
+      return `The domain ${domain} was registered very recently. Brand-new domains are commonly used in recruiter scams, since attackers spin them up just before a campaign.${orgClaim} This alone is not proof of fraud, but it is a strong red flag.`;
+    case "new":
+      return `The domain ${domain} is under 90 days old. Recently created domains are not necessarily scams, but they're disproportionately used in fraudulent campaigns.${orgClaim} Treat this as a meaningful caution signal.`;
+    case "young":
+      return `The domain ${domain} is under a year old. Many real businesses use young domains, but combined with other red flags this can matter.${orgClaim}`;
+    case "established":
+      return `The domain ${domain} has existed for years, which is consistent with an established organization rather than a throwaway scam domain. This is mildly reassuring on its own, but still verify the recruiter through official channels.`;
+    default:
+      return `Registration data was not available for ${domain}, so domain age can't factor into the risk score.`;
+  }
+}
+
+async function fetchRdap(domain: string): Promise<RdapDomainResponse | null> {
+  try {
+    // rdap.org is a thin redirector that knows the right RDAP server per TLD.
+    const res = await fetch(`https://rdap.org/domain/${encodeURIComponent(domain)}`, {
+      headers: { Accept: "application/rdap+json" },
+      redirect: "follow",
+    });
+    if (!res.ok) {
+      return null;
+    }
+    const data = (await res.json()) as RdapDomainResponse;
+    return data;
+  } catch (err) {
+    console.error("RDAP fetch error:", err);
+    return null;
+  }
+}
+
+async function runRdapLookup(input: {
+  recruiterEmail?: string;
+  companyName?: string;
+}): Promise<{ result: RdapResult; scoreDelta: number; floor: number; whyPoint: WhyPoint | null; nextStep: string | null }> {
+  const senderDomain = input.recruiterEmail ? extractEmailDomain(input.recruiterEmail) : null;
+  if (!senderDomain) {
+    return {
+      result: emptyRdap(null, "no_sender_domain"),
+      scoreDelta: 0,
+      floor: 0,
+      whyPoint: null,
+      nextStep: null,
+    };
+  }
+  // Skip RDAP for public mailbox providers — RDAP would just return the
+  // gmail.com/outlook.com registration which tells us nothing useful.
+  if (PUBLIC_EMAIL_DOMAINS.has(senderDomain)) {
+    return {
+      result: {
+        ...emptyRdap(senderDomain, "public_mailbox"),
+        ageSummary:
+          "Skipped — recruiter is writing from a public mailbox provider, so domain age doesn't apply here.",
+        interpretation:
+          "Domain registration data isn't meaningful when the recruiter is using a public email provider like Gmail or Outlook. The domain alignment check above is the relevant signal.",
+      },
+      scoreDelta: 0,
+      floor: 0,
+      whyPoint: null,
+      nextStep: null,
+    };
+  }
+
+  const lookupDomain = rootDomain(senderDomain);
+  const rdap = await fetchRdap(lookupDomain);
+  if (!rdap) {
+    return { result: emptyRdap(lookupDomain, "rdap_unavailable"), scoreDelta: 0, floor: 0, whyPoint: null, nextStep: null };
+  }
+
+  const events = rdap.events ?? [];
+  const regEvent = events.find((e) => e.eventAction === "registration");
+  const updEvent = events.find((e) => e.eventAction === "last changed" || e.eventAction === "last update of RDAP database");
+  const registrationDate = regEvent?.eventDate ?? null;
+  const lastUpdated = updEvent?.eventDate ?? null;
+  const registrar = extractRegistrarName(rdap.entities);
+
+  let ageDays: number | null = null;
+  if (registrationDate) {
+    const t = Date.parse(registrationDate);
+    if (!isNaN(t)) {
+      ageDays = Math.max(0, Math.floor((Date.now() - t) / (1000 * 60 * 60 * 24)));
+    }
+  }
+
+  const { bucket, summary } = bucketAge(ageDays);
+  const interpretation = buildRdapInterpretation(bucket, lookupDomain, input.companyName);
+
+  const nameservers = (rdap.nameservers ?? [])
+    .map((n) => (n.ldhName || n.unicodeName || "").toLowerCase())
+    .filter(Boolean)
+    .slice(0, 6);
+  const statuses = (rdap.status ?? []).slice(0, 6);
+
+  const result: RdapResult = {
+    available: true,
+    domain: lookupDomain,
+    registrar,
+    registrationDate,
+    lastUpdated,
+    nameservers,
+    statuses,
+    ageDays,
+    ageBucket: bucket,
+    ageSummary: summary,
+    interpretation,
+  };
+
+  let scoreDelta = 0;
+  let floor = 0;
+  let whyPoint: WhyPoint | null = null;
+  let nextStep: string | null = null;
+
+  if (bucket === "very_new") {
+    scoreDelta = 25;
+    floor = 40;
+    whyPoint = {
+      finding: `Sender domain ${lookupDomain} was registered ${ageDays} day${ageDays === 1 ? "" : "s"} ago.`,
+      why: interpretation,
+      severity: "bad",
+    };
+    nextStep = `Be very cautious — ${lookupDomain} is brand new. Verify the recruiter through the official company website before sharing anything.`;
+  } else if (bucket === "new") {
+    scoreDelta = 12;
+    floor = 20;
+    whyPoint = {
+      finding: `Sender domain ${lookupDomain} is under 90 days old.`,
+      why: interpretation,
+      severity: "caution",
+    };
+    nextStep = `Treat ${lookupDomain} with caution — it's a recently created domain. Confirm the recruiter through an official, separate channel.`;
+  } else if (bucket === "young") {
+    scoreDelta = 4;
+    whyPoint = {
+      finding: `Sender domain ${lookupDomain} is under a year old.`,
+      why: interpretation,
+      severity: "caution",
+    };
+  } else if (bucket === "established") {
+    scoreDelta = -3;
+    whyPoint = {
+      finding: `Sender domain ${lookupDomain} has been registered for years.`,
+      why: interpretation,
+      severity: "good",
+    };
+  }
+
+  return { result, scoreDelta, floor, whyPoint, nextStep };
+}
+
 
   return {
     result: { summary, findings, links: dedupeLinks(allLinks) },
