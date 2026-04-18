@@ -634,6 +634,17 @@ function Index() {
           >
             {result && <CtCardBody ct={result.ct} />}
           </ResultCard>
+
+          <ResultCard
+            icon={<History className="h-4 w-4" />}
+            title="Website history"
+            description="How long the company website has been visible in the Internet Archive Wayback Machine."
+            full
+            loading={loading}
+            hasData={!!result}
+          >
+            {result && <WaybackCardBody wayback={result.wayback} />}
+          </ResultCard>
         </section>
 
         <footer className="mt-16 border-t border-border/60 pt-8 pb-6 text-center text-sm text-muted-foreground">
