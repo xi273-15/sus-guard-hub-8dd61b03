@@ -102,9 +102,15 @@ export function FloatingAudioAssistant({
   }
 
   function handleOrbClick() {
-    // Orb only toggles pause/resume once playback has begun.
+    // Orb acts as global stop/resume for the active stream.
     if (!hasStarted) return;
-    play(primaryText, primaryKey);
+    if (status === "paused") {
+      // Resume the active section
+      play(activeText, activeKey || primaryKey);
+    } else {
+      // Stop everything (single-stream guarantee)
+      stop();
+    }
   }
 
   return (
