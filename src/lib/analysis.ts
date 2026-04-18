@@ -706,6 +706,241 @@ function analyzeDomainAlignment(
   };
 }
 
+// ---------- Tavily OSINT enrichment ----------
+type TavilySearchResult = {
+  title?: string;
+  url?: string;
+  content?: string;
+  score?: number;
+};
+
+type TavilyResponse = {
+  answer?: string;
+  results?: TavilySearchResult[];
+};
+
+type OsintInternal = {
+  result: OsintResult;
+  scoreDelta: number;
+  whyPoints: WhyPoint[];
+  nextSteps: string[];
+};
+
+const SCAM_KEYWORDS = [
+  "scam",
+  "scammer",
+  "fraud",
+  "fraudulent",
+  "fake recruiter",
+  "fake job",
+  "phishing",
+  "ripoff",
+  "rip-off",
+  "stolen",
+  "complaint",
+];
+
+const LEGIT_KEYWORDS = [
+  "linkedin.com/in/",
+  "linkedin.com/company/",
+  "crunchbase.com",
+  "bloomberg.com",
+  "glassdoor.com",
+  "wikipedia.org",
+  "github.com",
+  "techcrunch.com",
+];
+
+async function tavilySearch(query: string, apiKey: string): Promise<TavilyResponse | null> {
+  try {
+    const res = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_key: apiKey,
+        query,
+        search_depth: "basic",
+        max_results: 5,
+        include_answer: false,
+      }),
+    });
+    if (!res.ok) {
+      console.error(`Tavily query failed [${res.status}] for "${query}"`);
+      return null;
+    }
+    return (await res.json()) as TavilyResponse;
+  } catch (err) {
+    console.error("Tavily request error:", err);
+    return null;
+  }
+}
+
+function dedupeLinks(links: OsintLink[]): OsintLink[] {
+  const seen = new Set<string>();
+  const out: OsintLink[] = [];
+  for (const l of links) {
+    if (!l.url || !l.title) continue;
+    if (seen.has(l.url)) continue;
+    seen.add(l.url);
+    out.push(l);
+    if (out.length >= 6) break;
+  }
+  return out;
+}
+
+async function runTavilyOsint(input: {
+  recruiterName?: string;
+  companyName?: string;
+  companyDomain?: string;
+}): Promise<OsintInternal> {
+  const recruiter = (input.recruiterName ?? "").trim();
+  const company = (input.companyName ?? "").trim();
+  const domain = (input.companyDomain ?? "")
+    .trim()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "");
+
+  if (!recruiter && !company && !domain) {
+    return {
+      result: {
+        summary:
+          "We didn't run a public-web check because no recruiter name, company name, or company domain was provided.",
+        findings: [],
+        links: [],
+      },
+      scoreDelta: 0,
+      whyPoints: [],
+      nextSteps: [],
+    };
+  }
+
+  const apiKey = process.env.TAVILY_API_KEY;
+  if (!apiKey) {
+    console.warn("TAVILY_API_KEY is not configured — skipping OSINT enrichment.");
+    return {
+      result: {
+        summary: "Public-web check is currently unavailable.",
+        findings: [],
+        links: [],
+      },
+      scoreDelta: 0,
+      whyPoints: [],
+      nextSteps: [],
+    };
+  }
+
+  const queries: { kind: "consistency" | "recruiter" | "company_scam" | "domain_scam"; q: string }[] = [];
+  if (recruiter && company) queries.push({ kind: "consistency", q: `${recruiter} ${company}` });
+  if (recruiter) queries.push({ kind: "recruiter", q: `${recruiter} recruiter` });
+  if (company) queries.push({ kind: "company_scam", q: `${company} scam` });
+  if (domain) queries.push({ kind: "domain_scam", q: `${domain} scam` });
+
+  const responses = await Promise.all(queries.map((q) => tavilySearch(q.q, apiKey)));
+
+  const findings: string[] = [];
+  const allLinks: OsintLink[] = [];
+  const whyPoints: WhyPoint[] = [];
+  const nextSteps: string[] = [];
+  let scoreDelta = 0;
+  let consistencyHits = 0;
+  let scamHits = 0;
+  let totalResults = 0;
+
+  for (let i = 0; i < queries.length; i++) {
+    const { kind } = queries[i];
+    const resp = responses[i];
+    if (!resp || !resp.results) continue;
+    const results = resp.results.slice(0, 5);
+    totalResults += results.length;
+
+    if (kind === "consistency") {
+      const matches = results.filter((r) => {
+        const text = `${r.title ?? ""} ${r.url ?? ""} ${r.content ?? ""}`.toLowerCase();
+        return LEGIT_KEYWORDS.some((k) => text.includes(k));
+      });
+      if (matches.length > 0) {
+        consistencyHits += matches.length;
+        findings.push(
+          `Public results connect ${recruiter} to ${company} (e.g. LinkedIn, Crunchbase, or company pages).`,
+        );
+        whyPoints.push({
+          finding: `Public web results link ${recruiter} to ${company}.`,
+          why: "Finding the recruiter on LinkedIn, Crunchbase, or the company's own pages is a small positive signal that the person and company they claim to represent are real and connected.",
+          severity: "good",
+        });
+      }
+      matches.slice(0, 2).forEach((r) =>
+        allLinks.push({ title: r.title ?? r.url ?? "Result", url: r.url ?? "" }),
+      );
+    } else if (kind === "recruiter") {
+      results.slice(0, 2).forEach((r) =>
+        allLinks.push({ title: r.title ?? r.url ?? "Result", url: r.url ?? "" }),
+      );
+    } else {
+      const matches = results.filter((r) => {
+        const text = `${r.title ?? ""} ${r.content ?? ""}`.toLowerCase();
+        return SCAM_KEYWORDS.some((k) => text.includes(k));
+      });
+      if (matches.length > 0) {
+        scamHits += matches.length;
+        const subject = kind === "company_scam" ? company : domain;
+        findings.push(
+          `Public web mentions scam-related complaints involving ${subject} (${matches.length} result${matches.length === 1 ? "" : "s"}).`,
+        );
+        whyPoints.push({
+          finding: `Scam-related public mentions involving ${subject}.`,
+          why: "When public results discuss scams, fraud complaints, or fake-job warnings around a company or domain, it raises the likelihood that the recruiter contacting you is part of (or imitating) that pattern. Read the linked sources before deciding.",
+          severity: "bad",
+        });
+        nextSteps.push(
+          `Read the public scam reports about ${subject} before sharing any personal info or replying.`,
+        );
+      }
+      matches.slice(0, 2).forEach((r) =>
+        allLinks.push({ title: r.title ?? r.url ?? "Result", url: r.url ?? "" }),
+      );
+    }
+  }
+
+  if (scamHits >= 1) scoreDelta += Math.min(15, 6 + scamHits * 3);
+  if (consistencyHits >= 1 && scamHits === 0) scoreDelta -= Math.min(8, 3 + consistencyHits);
+
+  let summary: string;
+  if (totalResults === 0) {
+    summary =
+      "We found limited public evidence about this recruiter or company. That alone does not mean it's a scam — it just means we can't confirm much from public search results.";
+    whyPoints.push({
+      finding: "Limited public web evidence.",
+      why: "Some real recruiters and small companies have a thin web footprint. Treat this as 'unknown' rather than proof of a scam — verify through the company's official careers page.",
+      severity: "info",
+    });
+  } else if (scamHits > 0 && consistencyHits > 0) {
+    summary =
+      "Public search results are mixed: we found some legitimacy signals but also scam-related mentions. Read the linked sources carefully before deciding.";
+  } else if (scamHits > 0) {
+    summary =
+      "We found scam-related public mentions involving this company or domain. This raises the likelihood of a scam — review the linked sources before sharing anything.";
+  } else if (consistencyHits > 0) {
+    summary =
+      "Public web results are consistent with a real recruiter at this company (e.g. LinkedIn or company pages). This is a small positive signal, not a guarantee.";
+  } else {
+    summary =
+      "We found limited public evidence connecting this recruiter to the claimed company. That alone does not mean it's a scam — verify through the company's official careers page.";
+    whyPoints.push({
+      finding: "Limited public evidence connecting recruiter and company.",
+      why: "We couldn't find clear public sources tying this person to this company. This is not proof of a scam, but it's worth confirming through the company's official careers page or LinkedIn.",
+      severity: "info",
+    });
+  }
+
+  return {
+    result: { summary, findings, links: dedupeLinks(allLinks) },
+    scoreDelta,
+    whyPoints,
+    nextSteps,
+  };
+}
+
 export const analyzeRecruiter = createServerFn({ method: "POST" })
   .inputValidator((input: AnalysisInput) => input)
   .handler(async ({ data }): Promise<AnalysisResult> => {
