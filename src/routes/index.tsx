@@ -691,21 +691,44 @@ function ResultsView({
                 </ul>
               )}
               {split.recruiter.links.length > 0 && (
-                <ul className="mt-3 space-y-1.5">
-                  {split.recruiter.links.map((l, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm leading-relaxed">
-                      <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/80" />
-                      <a
-                        href={l.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="break-all text-primary underline-offset-4 hover:underline"
-                      >
-                        {l.title}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  <ul className="mt-3 space-y-1.5">
+                    {split.recruiter.links.map((l, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm leading-relaxed">
+                        <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/80" />
+                        <a
+                          href={l.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => {
+                            // Force open in a real new tab — escapes embedded
+                            // preview iframes that can otherwise block sites
+                            // like LinkedIn with ERR_BLOCKED_BY_RESPONSE.
+                            e.preventDefault();
+                            try {
+                              const w = window.open(l.url, "_blank", "noopener,noreferrer");
+                              if (!w && typeof window !== "undefined") {
+                                window.top?.location.assign(l.url);
+                              }
+                            } catch {
+                              window.location.href = l.url;
+                            }
+                          }}
+                          className="break-all text-primary underline-offset-4 hover:underline"
+                          title="Opens in a new tab"
+                        >
+                          {l.title}
+                          <span className="sr-only"> (opens in a new tab)</span>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                    Links open in a new browser tab. Some sites like LinkedIn
+                    may block embedded viewing — if a link looks broken, copy
+                    it into a normal browser window.
+                  </p>
+                </>
               )}
             </>
           ) : (
