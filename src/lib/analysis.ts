@@ -2617,7 +2617,334 @@ async function runRecruiterLocation(args: {
 }
 
 
-export const analyzeRecruiter = createServerFn({ method: "POST" })
+// ============================================================================
+// Website traffic context (third-party estimates only — Cloudflare Radar +
+// Tavily snippets from Similarweb/Semrush/Ahrefs + AI extraction).
+// This is intentionally framed as third-party intelligence, never as the
+// company's real internal analytics. Country alone is never proof of fraud.
+// ============================================================================
+
+function emptyTrafficResult(domain: string | null, status: TrafficEstimateStatus, summary: string, note: string): WebsiteTrafficResult {
+  return {
+    checked_domain: domain,
+    traffic_estimate_status: status,
+    estimated_top_countries: [],
+    estimated_visibility_summary: summary,
+    traffic_context_note: note,
+    sources: [],
+    geo_mismatch: false,
+    hiring_context_label: null,
+    hiring_context_country: null,
+  };
+}
+
+/**
+ * Cloudflare Radar exposes a free public API for some domain rankings + audience
+ * country distribution. We only enable it when CLOUDFLARE_RADAR_TOKEN is set —
+ * otherwise we skip silently. Returns top country codes with traffic share.
+ */
+async function fetchCloudflareRadarCountries(domain: string): Promise<{ country: string; share: number }[] | null> {
+  const token = process.env.CLOUDFLARE_RADAR_TOKEN;
+  if (!token) return null;
+  try {
+    const url = `https://api.cloudflare.com/client/v4/radar/ranking/domains/${encodeURIComponent(domain)}/locations?limit=5`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      console.warn(`Cloudflare Radar failed [${res.status}] for ${domain}`);
+      return null;
+    }
+    const json = (await res.json()) as {
+      result?: {
+        top_locations?: { clientCountryAlpha2?: string; rank?: number; value?: string }[];
+      };
+    };
+    const top = json.result?.top_locations ?? [];
+    return top
+      .map((t) => ({
+        country: (t.clientCountryAlpha2 ?? "").toUpperCase(),
+        share: Number(t.value ?? 0),
+      }))
+      .filter((t) => t.country);
+  } catch (err) {
+    console.warn("Cloudflare Radar error:", err);
+    return null;
+  }
+}
+
+type TrafficAiResult = {
+  top_countries: string[];
+  visibility_summary: string | null;
+  status: "available" | "limited" | "unavailable";
+};
+
+async function extractTrafficViaAi(args: {
+  domain: string;
+  snippets: { source: string; title: string; content: string; url: string }[];
+}): Promise<TrafficAiResult | null> {
+  const apiKey = process.env.LOVABLE_API_KEY;
+  if (!apiKey) return null;
+  if (args.snippets.length === 0) return null;
+
+  const ctx = args.snippets
+    .slice(0, 8)
+    .map((s, i) => `[${i + 1}] ${s.source} — ${s.title}\n${s.content}\nURL: ${s.url}`)
+    .join("\n\n");
+
+  try {
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-3-flash-preview",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You extract third-party website traffic ESTIMATES from snippets of pages like Similarweb, Semrush, Ahrefs, and Cloudflare Radar. " +
+              "These are estimates by third-party intelligence tools, not the site's real internal analytics. " +
+              "Only use what's literally in the snippets. Never guess. " +
+              "Return up to 5 estimated top audience countries (use full country names like 'United States', 'Germany'). " +
+              "Write a short visibility_summary in plain English (e.g. 'Modest estimated traffic with audience concentrated in the US and UK.'). " +
+              "If the snippets don't say anything useful, set status='limited' or 'unavailable' and return an empty top_countries list.",
+          },
+          { role: "user", content: `Domain: ${args.domain}\n\nSnippets:\n${ctx}` },
+        ],
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "report_traffic_estimate",
+              description: "Report estimated top audience countries and visibility for the domain.",
+              parameters: {
+                type: "object",
+                properties: {
+                  status: {
+                    type: "string",
+                    enum: ["available", "limited", "unavailable"],
+                    description: "available = clear estimate found; limited = weak hints only; unavailable = nothing usable.",
+                  },
+                  top_countries: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Up to 5 estimated top audience countries (full names).",
+                  },
+                  visibility_summary: {
+                    type: ["string", "null"],
+                    description: "One-sentence plain-English summary of estimated visibility/audience.",
+                  },
+                },
+                required: ["status", "top_countries", "visibility_summary"],
+                additionalProperties: false,
+              },
+            },
+          },
+        ],
+        tool_choice: { type: "function", function: { name: "report_traffic_estimate" } },
+      }),
+    });
+    if (!res.ok) {
+      console.warn(`Traffic AI extraction failed [${res.status}]`);
+      return null;
+    }
+    const json = (await res.json()) as {
+      choices?: { message?: { tool_calls?: { function?: { arguments?: string } }[] } }[];
+    };
+    const argsStr = json.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
+    if (!argsStr) return null;
+    const parsed = JSON.parse(argsStr) as Partial<TrafficAiResult>;
+    return {
+      status: parsed.status === "available" || parsed.status === "limited" ? parsed.status : "unavailable",
+      top_countries: Array.isArray(parsed.top_countries)
+        ? parsed.top_countries.filter((c): c is string => typeof c === "string" && c.trim().length > 0).slice(0, 5)
+        : [],
+      visibility_summary:
+        typeof parsed.visibility_summary === "string" && parsed.visibility_summary.trim()
+          ? parsed.visibility_summary.trim()
+          : null,
+    };
+  } catch (err) {
+    console.warn("Traffic AI error:", err);
+    return null;
+  }
+}
+
+const ISO_TO_COUNTRY_NAME: Record<string, string> = {
+  US: "United States", GB: "United Kingdom", UK: "United Kingdom", DE: "Germany", FR: "France",
+  NL: "Netherlands", IE: "Ireland", ES: "Spain", IT: "Italy", PT: "Portugal", BE: "Belgium",
+  CH: "Switzerland", AT: "Austria", SE: "Sweden", NO: "Norway", DK: "Denmark", FI: "Finland",
+  PL: "Poland", CZ: "Czech Republic", RO: "Romania", UA: "Ukraine", RU: "Russia", TR: "Turkey",
+  CA: "Canada", MX: "Mexico", BR: "Brazil", AR: "Argentina", CL: "Chile", CO: "Colombia",
+  AU: "Australia", NZ: "New Zealand", IN: "India", PK: "Pakistan", BD: "Bangladesh",
+  CN: "China", HK: "Hong Kong", TW: "Taiwan", JP: "Japan", KR: "South Korea",
+  SG: "Singapore", MY: "Malaysia", ID: "Indonesia", PH: "Philippines", TH: "Thailand",
+  VN: "Vietnam", AE: "United Arab Emirates", SA: "Saudi Arabia", IL: "Israel", EG: "Egypt",
+  ZA: "South Africa", NG: "Nigeria", KE: "Kenya", MA: "Morocco",
+};
+
+async function runWebsiteTraffic(args: {
+  companyDomain?: string;
+  roleLocation?: string;
+  rdapCountry: string | null;
+}): Promise<{ result: WebsiteTrafficResult; scoreDelta: number; whyPoint: WhyPoint | null }> {
+  const rawDomain = (args.companyDomain ?? "").trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase();
+  const domain = rawDomain || null;
+
+  // Hiring context (same precedence as recruiter location).
+  const role = (args.roleLocation ?? "").trim();
+  let hiringLabel: string | null = null;
+  let hiringCountry: string | null = null;
+  if (role) {
+    hiringLabel = `${role} (claimed role location)`;
+    hiringCountry = normalizeCountryToCode(role);
+  } else if (args.rdapCountry) {
+    hiringLabel = `${args.rdapCountry} (company HQ via domain registration)`;
+    hiringCountry = normalizeCountryToCode(args.rdapCountry);
+  }
+
+  if (!domain) {
+    const r = emptyTrafficResult(
+      null,
+      "unavailable",
+      "No company domain was provided, so we couldn't run a traffic-context check.",
+      "Traffic-estimate data is unavailable without a domain. This is not a fraud signal on its own.",
+    );
+    r.hiring_context_label = hiringLabel;
+    r.hiring_context_country = hiringCountry;
+    return { result: r, scoreDelta: 0, whyPoint: null };
+  }
+
+  const sourcesUsed: string[] = [];
+  const snippets: { source: string; title: string; content: string; url: string }[] = [];
+
+  // 1) Cloudflare Radar (free, structured).
+  const radar = await fetchCloudflareRadarCountries(domain);
+  let radarCountries: string[] = [];
+  if (radar && radar.length > 0) {
+    sourcesUsed.push("Cloudflare Radar");
+    radarCountries = radar
+      .slice(0, 5)
+      .map((r) => ISO_TO_COUNTRY_NAME[r.country] ?? r.country);
+    snippets.push({
+      source: "Cloudflare Radar",
+      title: `Top audience locations for ${domain}`,
+      content: radar.map((r) => `${ISO_TO_COUNTRY_NAME[r.country] ?? r.country}${r.share ? ` (~${r.share}%)` : ""}`).join(", "),
+      url: `https://radar.cloudflare.com/domains/domain/${domain}`,
+    });
+  }
+
+  // 2) Tavily snippets from Similarweb / Semrush / Ahrefs.
+  const tavilyKey = process.env.TAVILY_API_KEY;
+  if (tavilyKey) {
+    const queries = [
+      { source: "Similarweb", q: `site:similarweb.com ${domain} top countries` },
+      { source: "Semrush", q: `site:semrush.com ${domain} traffic analytics countries` },
+      { source: "Ahrefs", q: `site:ahrefs.com ${domain} traffic countries` },
+    ];
+    const results = await Promise.all(queries.map((qq) => tavilySearch(qq.q, tavilyKey)));
+    for (let i = 0; i < queries.length; i++) {
+      const r = results[i];
+      if (!r || !r.results || r.results.length === 0) continue;
+      sourcesUsed.push(queries[i].source);
+      for (const hit of r.results.slice(0, 2)) {
+        snippets.push({
+          source: queries[i].source,
+          title: hit.title ?? "",
+          content: (hit.content ?? "").slice(0, 600),
+          url: hit.url ?? "",
+        });
+      }
+    }
+  }
+
+  // 3) AI-extract structured top countries + visibility summary.
+  const ai = await extractTrafficViaAi({ domain, snippets });
+
+  // Merge: prefer Radar + AI together; AI may add what's not in Radar.
+  let topCountries: string[] = [];
+  if (radarCountries.length > 0) topCountries = [...radarCountries];
+  if (ai && ai.top_countries.length > 0) {
+    for (const c of ai.top_countries) {
+      if (!topCountries.some((existing) => existing.toLowerCase() === c.toLowerCase())) {
+        topCountries.push(c);
+      }
+    }
+  }
+  topCountries = topCountries.slice(0, 5);
+
+  let status: TrafficEstimateStatus = "unavailable";
+  if (topCountries.length > 0) status = "available";
+  else if (snippets.length > 0 || (ai && ai.status !== "unavailable")) status = "limited";
+
+  let visibilitySummary: string;
+  if (ai?.visibility_summary) {
+    visibilitySummary = ai.visibility_summary;
+  } else if (status === "available") {
+    visibilitySummary = `Third-party traffic estimates suggest visible audience activity in ${topCountries.slice(0, 3).join(", ")}.`;
+  } else if (status === "limited") {
+    visibilitySummary = `Third-party traffic-estimate signals for ${domain} are limited.`;
+  } else {
+    visibilitySummary = `Traffic-estimate data is unavailable or limited for ${domain}.`;
+  }
+
+  // Geo-mismatch check: only when we have a hiring country AND at least one country code we can map back.
+  let geoMismatch = false;
+  if (hiringCountry && topCountries.length > 0) {
+    const topCodes = topCountries.map((n) => normalizeCountryToCode(n)).filter((c): c is string => !!c);
+    if (topCodes.length > 0 && !topCodes.includes(hiringCountry.toUpperCase())) {
+      geoMismatch = true;
+    }
+  }
+
+  let contextNote: string;
+  if (status === "unavailable") {
+    contextNote =
+      "Traffic-estimate data is unavailable or limited for this domain. This is third-party intelligence — absence is not a fraud signal on its own.";
+  } else if (geoMismatch && hiringLabel) {
+    contextNote =
+      `Estimated traffic geography may not fully align with the claimed business context (${hiringLabel}). ` +
+      `This is a supporting context signal from third-party estimates, not proof of fraud.`;
+  } else {
+    contextNote =
+      "Estimated audience geography is broadly consistent with the claimed context, or the comparison is inconclusive. " +
+      "These figures come from third-party web-intelligence tools, not the company's real internal analytics.";
+  }
+
+  let whyPoint: WhyPoint | null = null;
+  let scoreDelta = 0;
+  if (geoMismatch && status === "available") {
+    whyPoint = {
+      finding: `Third-party traffic estimates suggest most visible audience activity for ${domain} comes from ${topCountries.slice(0, 2).join(" and ")}, which may not align with ${hiringLabel ?? "the claimed hiring context"}.`,
+      why:
+        "Estimated traffic geography is a weak supporting signal — not proof of fraud. It matters more when combined with other weak trust signals like an unverifiable address, suspicious domain history, or generic recruiter outreach.",
+      severity: "caution",
+    };
+    // Tiny nudge — handler decides whether to apply based on other weak signals.
+    scoreDelta = 2;
+  }
+
+  return {
+    result: {
+      checked_domain: domain,
+      traffic_estimate_status: status,
+      estimated_top_countries: topCountries,
+      estimated_visibility_summary: visibilitySummary,
+      traffic_context_note: contextNote,
+      sources: Array.from(new Set(sourcesUsed)),
+      geo_mismatch: geoMismatch,
+      hiring_context_label: hiringLabel,
+      hiring_context_country: hiringCountry,
+    },
+    scoreDelta,
+    whyPoint,
+  };
+}
+
+
   .inputValidator((input: AnalysisInput) => input)
   .handler(async ({ data }): Promise<AnalysisResult> => {
     const message = (data.message ?? "").trim();
