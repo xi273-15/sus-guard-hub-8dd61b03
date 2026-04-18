@@ -1217,11 +1217,14 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       let noMsgScore = 0;
       const authDelta = headerAuth.scoreDelta;
       const authFloor = headerAuth.floor;
-      if (domainCheck.scoreDelta > 0 || authDelta > 0) {
-        noMsgScore = Math.min(85, 15 + domainCheck.scoreDelta + authDelta);
+      if (domainCheck.scoreDelta > 0 || authDelta > 0 || osint.scoreDelta > 0) {
+        noMsgScore = Math.min(85, 15 + domainCheck.scoreDelta + authDelta + Math.max(0, osint.scoreDelta));
       }
+      if (osint.scoreDelta < 0) noMsgScore = Math.max(0, noMsgScore + osint.scoreDelta);
       if (domainCheck.floor > 0) noMsgScore = Math.max(noMsgScore, domainCheck.floor);
       if (authFloor > 0) noMsgScore = Math.max(noMsgScore, authFloor);
+      osint.result.findings.forEach((f) => baseFindings.push(f));
+      osint.nextSteps.forEach((s) => baseSteps.push(s));
 
       const noMsgLevel = levelFor(noMsgScore);
 
