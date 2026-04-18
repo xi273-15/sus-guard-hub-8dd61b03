@@ -28,6 +28,23 @@ export type OsintResult = {
   links: OsintLink[];
 };
 
+export type RdapAgeBucket = "very_new" | "new" | "young" | "established" | "unknown";
+
+export type RdapResult = {
+  available: boolean;
+  domain: string | null;
+  registrar: string | null;
+  registrationDate: string | null; // ISO
+  lastUpdated: string | null; // ISO
+  nameservers: string[];
+  statuses: string[];
+  ageDays: number | null;
+  ageBucket: RdapAgeBucket;
+  ageSummary: string;
+  interpretation: string;
+  error?: string;
+};
+
 export type AnalysisResult = {
   risk_score: number;
   risk_level: RiskLevel;
@@ -39,6 +56,7 @@ export type AnalysisResult = {
   osint_summary: string;
   osint_findings: string[];
   osint_links: OsintLink[];
+  rdap: RdapResult;
 };
 
 type SignalKind = "scam" | "caution" | "positive";
