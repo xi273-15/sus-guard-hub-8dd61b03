@@ -1,31 +1,33 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { SpeakButton } from "@/components/speak-button";
 import { HeadersHelpDialog } from "@/components/headers-help-dialog";
+import { RiskOverview } from "@/components/results/risk-overview";
+import { InteractiveTrio } from "@/components/results/interactive-trio";
+import { CategoryTile } from "@/components/results/category-tile";
+import { CategoryModal } from "@/components/results/category-modal";
+import { FindingSection } from "@/components/results/finding-section";
+import {
+  splitOsint,
+  emailStats,
+  companyStats,
+  recruiterStats,
+  emailVoiceText,
+  companyVoiceText,
+  recruiterVoiceText,
+} from "@/lib/categorize-findings";
 import { ArrowLeft } from "lucide-react";
 import {
   Shield,
-  ShieldAlert,
   Search,
   FileText,
   Mail,
   Building2,
   Globe,
   User,
-  AlertTriangle,
-  ListChecks,
-  Info,
   Sparkles,
   Loader2,
-  CheckCircle2,
-  Mailbox,
-  Globe2,
   ExternalLink,
-  CalendarClock,
-  Network,
-  ShieldCheck,
-  ScrollText,
-  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -196,7 +198,7 @@ function Index() {
         </p>
       </header>
 
-      <main className="mx-auto max-w-3xl px-6 pb-20">
+      <main className={`mx-auto px-6 pb-20 ${stage === "results" ? "max-w-6xl" : "max-w-3xl"}`}>
         {stage === "input" && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
 
@@ -386,310 +388,8 @@ function Index() {
         )}
 
 
-        {stage === "results" && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-          <div className="flex items-center justify-between gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={resetToInput}
-              className="gap-2"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Check another recruiter
-            </Button>
-            <span className="text-xs text-muted-foreground">Analysis results</span>
-          </div>
-
-          {/* Risk summary */}
-          <Card className="overflow-hidden border-border/60 bg-card/85 shadow-[var(--shadow-elegant)] backdrop-blur">
-            <div
-              className="h-1 w-full"
-              style={{ background: "var(--gradient-primary)" }}
-              aria-hidden
-            />
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Risk score
-                </CardTitle>
-                <span
-                  className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
-                    result
-                      ? riskLevelClasses(result.risk_level)
-                      : "border-border/60 bg-background/60 text-muted-foreground"
-                  }`}
-                >
-                  {loading ? "Analyzing…" : result ? result.risk_level : "Pending"}
-                </span>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-baseline gap-2">
-                <span
-                  className={`text-5xl font-bold tracking-tight ${
-                    result ? "text-foreground" : "text-foreground/40"
-                  }`}
-                >
-                  {loading ? "…" : result ? result.risk_score : "—"}
-                </span>
-                <span className="text-sm text-muted-foreground">/ 100</span>
-              </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full bg-primary transition-all duration-500"
-                  style={{ width: `${result ? result.risk_score : 0}%` }}
-                />
-              </div>
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>Low</span>
-                <span>Medium</span>
-                <span>High</span>
-                <span>Critical</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Detailed results */}
-          <section aria-labelledby="results-heading" className="mt-4 space-y-5">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <h2
-                id="results-heading"
-                className="text-2xl font-semibold tracking-tight"
-              >
-                Detailed analysis
-              </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {loading
-                  ? "Analyzing the recruiter…"
-                  : result
-                    ? "Here's what we found."
-                    : "Run a check above to populate this section."}
-              </p>
-            </div>
-          </div>
-
-          <div className="grid gap-5 md:grid-cols-2">
-            <ResultCard
-              icon={<ShieldAlert className="h-4 w-4" />}
-              title="Risk score"
-              description="See exactly how concerning this recruiter looks."
-              loading={loading}
-              hasData={!!result}
-            >
-              {result && (
-                <div className="flex items-baseline gap-3">
-                  <span className="text-4xl font-bold tracking-tight">
-                    {result.risk_score}
-                  </span>
-                  <span className="text-sm text-muted-foreground">/ 100</span>
-                </div>
-              )}
-            </ResultCard>
-
-            <ResultCard
-              icon={<AlertTriangle className="h-4 w-4" />}
-              title="Risk level"
-              description="An at-a-glance label for how concerned you should be."
-              loading={loading}
-              hasData={!!result}
-            >
-              {result && (
-                <span
-                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold ${riskLevelClasses(result.risk_level)}`}
-                >
-                  <AlertTriangle className="h-4 w-4" />
-                  {result.risk_level}
-                </span>
-              )}
-            </ResultCard>
-
-            <ResultCard
-              icon={<ListChecks className="h-4 w-4" />}
-              title="Findings"
-              description="Signals from the email, domain, and message."
-              loading={loading}
-              hasData={!!result}
-            >
-              {result && (
-                <ul className="space-y-2">
-                  {result.findings.map((f, i) => (
-                    <li key={i} className="flex gap-2 text-sm leading-relaxed">
-                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-                      <span>{f}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </ResultCard>
-
-            <ResultCard
-              icon={<Info className="h-4 w-4" />}
-              title="Why it matters"
-              description="What each finding means for you, in plain English."
-              loading={loading}
-              hasData={!!result}
-            >
-              {result && (
-                <div className="space-y-3">
-                  {result.why_points.length > 0 ? (
-                    <ul className="space-y-2.5">
-                      {result.why_points.map((p, i) => {
-                        const sev = p.severity;
-                        const dot =
-                          sev === "good"
-                            ? "bg-emerald-500"
-                            : sev === "bad"
-                              ? "bg-red-500"
-                              : sev === "caution"
-                                ? "bg-amber-500"
-                                : "bg-muted-foreground";
-                        return (
-                          <li key={i} className="flex gap-2.5 text-sm leading-relaxed">
-                            <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dot}`} />
-                            <span>
-                              <span className="font-medium text-foreground">{p.finding}</span>{" "}
-                              <span className="text-muted-foreground">— {p.why}</span>
-                            </span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  ) : (
-                    <p className="text-sm leading-relaxed text-foreground/90">
-                      {result.why_it_matters}
-                    </p>
-                  )}
-                </div>
-              )}
-            </ResultCard>
-          </div>
-
-          <ResultCard
-            icon={<Shield className="h-4 w-4" />}
-            title="Recommended next steps"
-            description="Clear, practical actions to verify the recruiter or protect yourself."
-            full
-            loading={loading}
-            hasData={!!result}
-          >
-            {result && (
-              <ul className="space-y-2.5">
-                {result.next_steps.map((s, i) => (
-                  <li key={i} className="flex gap-2.5 text-sm leading-relaxed">
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                    <span>{s}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </ResultCard>
-
-          <ResultCard
-            icon={<Globe2 className="h-4 w-4" />}
-            title="Public web evidence"
-            description="What public search results say about this recruiter, company, or domain. Powered by Tavily."
-            full
-            loading={loading}
-            hasData={!!result}
-          >
-            {result && (
-              <div className="space-y-4">
-                <p className="text-sm leading-relaxed text-foreground/90">{result.osint_summary}</p>
-                {result.osint_findings.length > 0 && (
-                  <ul className="space-y-2">
-                    {result.osint_findings.map((f, i) => (
-                      <li key={i} className="flex gap-2 text-sm leading-relaxed">
-                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-                        <span>{f}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {result.osint_links.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      Relevant public links
-                    </p>
-                    <ul className="space-y-1.5">
-                      {result.osint_links.map((l, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm leading-relaxed">
-                          <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/80" />
-                          <a
-                            href={l.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="break-all text-primary underline-offset-4 hover:underline"
-                          >
-                            {l.title}
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-          </ResultCard>
-
-          <ResultCard
-            icon={<CalendarClock className="h-4 w-4" />}
-            title="Domain registration"
-            description="When the recruiter's email domain was registered, and what that means. Powered by RDAP."
-            full
-            loading={loading}
-            hasData={!!result}
-          >
-            {result && <RdapCardBody rdap={result.rdap} />}
-          </ResultCard>
-
-          <ResultCard
-            icon={<Network className="h-4 w-4" />}
-            title="DNS and email infrastructure"
-            description="Whether the recruiter's email domain has normal mail (MX), authentication (SPF/DMARC), and web (A/AAAA) records."
-            full
-            loading={loading}
-            hasData={!!result}
-          >
-            {result && <DnsCardBody dns={result.dns} />}
-          </ResultCard>
-
-          <ResultCard
-            icon={<ShieldCheck className="h-4 w-4" />}
-            title="Site reputation"
-            description="Whether the company website is currently flagged by Google Safe Browsing for malware, phishing, or other harmful content."
-            full
-            loading={loading}
-            hasData={!!result}
-          >
-            {result && <SafeBrowsingCardBody safeBrowsing={result.safe_browsing} />}
-          </ResultCard>
-
-          <ResultCard
-            icon={<ScrollText className="h-4 w-4" />}
-            title="Certificate history"
-            description="Public TLS certificate issuance history for the recruiter's email domain (Certificate Transparency logs)."
-            full
-            loading={loading}
-            hasData={!!result}
-          >
-            {result && <CtCardBody ct={result.ct} />}
-          </ResultCard>
-
-          <ResultCard
-            icon={<History className="h-4 w-4" />}
-            title="Website history"
-            description="How long the company website has been visible in the Internet Archive Wayback Machine."
-            full
-            loading={loading}
-            hasData={!!result}
-          >
-            {result && <WaybackCardBody wayback={result.wayback} />}
-          </ResultCard>
-          </section>
-        </div>
+        {stage === "results" && result && (
+          <ResultsView result={result} input={form} onReset={resetToInput} />
         )}
 
         <footer className="mt-16 border-t border-border/60 pt-8 pb-6 text-center text-sm text-muted-foreground">
@@ -782,67 +482,251 @@ function Field({
   );
 }
 
-
-
-function ResultCard({
-  icon,
-  title,
-  description,
-  full,
-  loading,
-  hasData,
-  children,
+function ResultsView({
+  result,
+  input,
+  onReset,
 }: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  full?: boolean;
-  loading?: boolean;
-  hasData?: boolean;
-  children?: React.ReactNode;
+  result: AnalysisResult;
+  input: FormState;
+  onReset: () => void;
 }) {
-  const status = loading ? "Analyzing" : hasData ? "Ready" : "Pending";
+  const [openCategory, setOpenCategory] = useState<
+    "email" | "company" | "recruiter" | null
+  >(null);
+
+  const split = useMemo(
+    () => splitOsint(result, input.recruiterName, input.companyName, input.companyDomain),
+    [result, input.recruiterName, input.companyName, input.companyDomain],
+  );
+
+  const eStats = useMemo(() => emailStats(result), [result]);
+  const cStats = useMemo(() => companyStats(result, split), [result, split]);
+  const rStats = useMemo(
+    () => recruiterStats(input.recruiterName, split),
+    [input.recruiterName, split],
+  );
+
+  const tagline = useMemo(() => {
+    const all = [eStats, cStats, rStats];
+    const good = all.reduce((s, x) => s + x.good, 0);
+    const caution = all.reduce((s, x) => s + x.caution, 0);
+    const bad = all.reduce((s, x) => s + x.bad, 0);
+    const parts: string[] = [];
+    if (good) parts.push(`${good} positive signal${good > 1 ? "s" : ""}`);
+    if (caution) parts.push(`${caution} caution${caution > 1 ? "s" : ""}`);
+    if (bad) parts.push(`${bad} red flag${bad > 1 ? "s" : ""}`);
+    return parts.length
+      ? `${parts.join(" · ")} across email, company, and recruiter checks.`
+      : "Analysis complete — explore the categories below for details.";
+  }, [eStats, cStats, rStats]);
+
   return (
-    <Card
-      className={`group border-border/60 bg-card/60 backdrop-blur transition-colors hover:border-primary/40 ${
-        full ? "md:col-span-2" : ""
-      }`}
-    >
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between gap-3">
-          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-            <span
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-primary"
-              style={{ backgroundColor: "color-mix(in oklab, var(--primary) 14%, transparent)" }}
-            >
-              {icon}
-            </span>
-            {title}
-          </CardTitle>
-          <span className="rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            {status}
-          </span>
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3">
+        <Button type="button" variant="outline" size="sm" onClick={onReset} className="gap-2">
+          <ArrowLeft className="h-4 w-4" />
+          Check another recruiter
+        </Button>
+        <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+          Analysis results
+        </span>
+      </div>
+
+      {/* Tier 1 — Hero */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        <RiskOverview result={result} tagline={tagline} />
+        <InteractiveTrio result={result} />
+      </div>
+
+      {/* Tier 2 — Category tiles */}
+      <section aria-labelledby="categories-heading" className="space-y-4">
+        <div>
+          <h2
+            id="categories-heading"
+            className="text-xl font-semibold tracking-tight sm:text-2xl"
+          >
+            Detailed signals
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Tap a card to dive into the findings behind the score.
+          </p>
         </div>
-      </CardHeader>
-      <CardContent className="pt-0">
-        {loading ? (
-          <div className="space-y-2">
-            <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
-            <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
-            <div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
-          </div>
-        ) : hasData ? (
-          <div>{children}</div>
-        ) : (
-          <div className="flex h-20 items-center justify-center rounded-md border border-dashed border-border/60 bg-background/40 text-xs text-muted-foreground">
-            No data yet
-          </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <CategoryTile
+            icon={<Mail className="h-5 w-5" />}
+            title="Email findings"
+            subtitle="Sender identity, authentication & infrastructure"
+            stats={eStats}
+            onClick={() => setOpenCategory("email")}
+          />
+          <CategoryTile
+            icon={<Building2 className="h-5 w-5" />}
+            title="Company / domain"
+            subtitle="Website history, reputation & registration"
+            stats={cStats}
+            onClick={() => setOpenCategory("company")}
+          />
+          <CategoryTile
+            icon={<User className="h-5 w-5" />}
+            title="Recruiter"
+            subtitle="Public information about the person"
+            stats={rStats}
+            onClick={() => setOpenCategory("recruiter")}
+          />
+        </div>
+      </section>
+
+      {/* Modals */}
+      <CategoryModal
+        open={openCategory === "email"}
+        onOpenChange={(o) => !o && setOpenCategory(null)}
+        icon={<Mail className="h-4 w-4" />}
+        title="Email findings"
+        voiceText={emailVoiceText(result)}
+        voiceKey="results:email-modal"
+      >
+        <FindingSection title="DNS & email infrastructure">
+          <DnsCardBody dns={result.dns} />
+        </FindingSection>
+        <FindingSection title="Sender domain registration">
+          <RdapCardBody rdap={result.rdap} />
+        </FindingSection>
+      </CategoryModal>
+
+      <CategoryModal
+        open={openCategory === "company"}
+        onOpenChange={(o) => !o && setOpenCategory(null)}
+        icon={<Building2 className="h-4 w-4" />}
+        title="Company & domain findings"
+        voiceText={companyVoiceText(result, split)}
+        voiceKey="results:company-modal"
+      >
+        {(split.company.findings.length > 0 || split.company.links.length > 0) && (
+          <FindingSection title="Public web evidence">
+            {split.company.findings.length > 0 && (
+              <ul className="space-y-2">
+                {split.company.findings.map((f, i) => (
+                  <li key={i} className="flex gap-2 text-sm leading-relaxed">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {split.company.links.length > 0 && (
+              <ul className="mt-3 space-y-1.5">
+                {split.company.links.map((l, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm leading-relaxed">
+                    <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/80" />
+                    <a
+                      href={l.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="break-all text-primary underline-offset-4 hover:underline"
+                    >
+                      {l.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </FindingSection>
         )}
-        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{description}</p>
-      </CardContent>
-    </Card>
+        <FindingSection title="Website history (Wayback Machine)">
+          <WaybackCardBody wayback={result.wayback} />
+        </FindingSection>
+        <FindingSection title="Site reputation (Safe Browsing)">
+          <SafeBrowsingCardBody safeBrowsing={result.safe_browsing} />
+        </FindingSection>
+        <FindingSection title="Certificate history (CT logs)">
+          <CtCardBody ct={result.ct} />
+        </FindingSection>
+      </CategoryModal>
+
+      <CategoryModal
+        open={openCategory === "recruiter"}
+        onOpenChange={(o) => !o && setOpenCategory(null)}
+        icon={<User className="h-4 w-4" />}
+        title="Recruiter / individual findings"
+        voiceText={recruiterVoiceText(input.recruiterName, split)}
+        voiceKey="results:recruiter-modal"
+      >
+        <FindingSection title="Who reached out">
+          <div className="space-y-1 text-sm">
+            <p>
+              <span className="text-muted-foreground">Name:</span>{" "}
+              <span className="font-medium text-foreground">
+                {input.recruiterName || "Not provided"}
+              </span>
+            </p>
+            <p>
+              <span className="text-muted-foreground">Email:</span>{" "}
+              <span className="font-mono text-xs text-foreground/90">
+                {input.recruiterEmail || "Not provided"}
+              </span>
+            </p>
+            <p>
+              <span className="text-muted-foreground">Claimed company:</span>{" "}
+              <span className="font-medium text-foreground">
+                {input.companyName || "Not provided"}
+              </span>
+            </p>
+          </div>
+        </FindingSection>
+
+        <FindingSection title="Public information found">
+          {split.recruiter.findings.length > 0 || split.recruiter.links.length > 0 ? (
+            <>
+              {split.recruiter.findings.length > 0 && (
+                <ul className="space-y-2">
+                  {split.recruiter.findings.map((f, i) => (
+                    <li key={i} className="flex gap-2 text-sm leading-relaxed">
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {split.recruiter.links.length > 0 && (
+                <ul className="mt-3 space-y-1.5">
+                  {split.recruiter.links.map((l, i) => (
+                    <li key={i} className="flex items-start gap-2 text-sm leading-relaxed">
+                      <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/80" />
+                      <a
+                        href={l.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="break-all text-primary underline-offset-4 hover:underline"
+                      >
+                        {l.title}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : (
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              We didn't find clear public information about this person tied to the
+              claimed role and company. That's not necessarily a red flag — many
+              legitimate recruiters keep a low public profile.
+            </p>
+          )}
+          <p className="mt-3 text-xs italic leading-relaxed text-muted-foreground">
+            Double-check public profile links — search results may include other
+            people with similar names. Look for a profile that explicitly mentions
+            the claimed role and company.
+          </p>
+        </FindingSection>
+      </CategoryModal>
+    </div>
   );
 }
+
+
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
