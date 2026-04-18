@@ -1345,6 +1345,7 @@ async function runRdapLookup(input: {
   const registrationDate = regEvent?.eventDate ?? null;
   const lastUpdated = updEvent?.eventDate ?? null;
   const registrar = extractRegistrarName(rdap.entities);
+  const registrantCountry = extractRegistrantCountry(rdap.entities);
 
   let ageDays: number | null = null;
   if (registrationDate) {
