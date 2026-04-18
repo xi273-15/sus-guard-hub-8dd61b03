@@ -38,7 +38,7 @@ export function FloatingAudioAssistant({
   /** @deprecated autoplay is intentionally disabled — kept for backwards compatibility */
   autoPlayIntro?: boolean;
 }) {
-  const { play, status, activeKey, activeText, currentTime, duration, level } = useTtsPlayer();
+  const { play, stop, status, activeKey, activeText, currentTime, duration, level } = useTtsPlayer();
 
   // Decide what this orb should play when triggered: prefer summary, fallback to intro
   const primaryText = summary?.trim() || introScript?.trim() || "";
