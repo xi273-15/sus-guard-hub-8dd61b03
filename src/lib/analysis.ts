@@ -1894,6 +1894,18 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (next_steps.length < 6 && !next_steps.includes(s)) next_steps.push(s);
     });
 
+    // RDAP findings, why-point, next step, and audio summary
+    if (rdap.available) {
+      findings.push(`Domain ${rdap.domain}: ${rdap.ageSummary}`);
+    }
+    if (rdapLookup.whyPoint) why_points.push(rdapLookup.whyPoint);
+    if (rdapLookup.nextStep && next_steps.length < 6 && !next_steps.includes(rdapLookup.nextStep)) {
+      next_steps.push(rdapLookup.nextStep);
+    }
+    if (rdap.available) {
+      summaryParts.push(`Domain registration: ${rdap.ageSummary} ${rdap.interpretation}`);
+    }
+
     return {
       risk_score: score,
       risk_level: level,
@@ -1905,5 +1917,6 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       osint_summary: osint.result.summary,
       osint_findings: osint.result.findings,
       osint_links: osint.result.links,
+      rdap,
     };
   });
