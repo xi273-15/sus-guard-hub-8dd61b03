@@ -725,3 +725,101 @@ function ResultCard({
     </Card>
   );
 }
+
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function RdapCardBody({ rdap }: { rdap: RdapResult }) {
+  if (!rdap.available) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm leading-relaxed text-foreground/90">{rdap.ageSummary}</p>
+        <p className="text-sm leading-relaxed text-muted-foreground">{rdap.interpretation}</p>
+      </div>
+    );
+  }
+
+  const bucketStyles: Record<RdapResult["ageBucket"], string> = {
+    very_new: "text-red-500 border-red-500/30 bg-red-500/10",
+    new: "text-orange-500 border-orange-500/30 bg-orange-500/10",
+    young: "text-amber-500 border-amber-500/30 bg-amber-500/10",
+    established: "text-emerald-500 border-emerald-500/30 bg-emerald-500/10",
+    unknown: "border-border/60 bg-background/60 text-muted-foreground",
+  };
+  const bucketLabel: Record<RdapResult["ageBucket"], string> = {
+    very_new: "Very new",
+    new: "Recently registered",
+    young: "Under 1 year",
+    established: "Established",
+    unknown: "Unknown",
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <RdapField label="Checked domain" value={rdap.domain ?? "—"} mono />
+        <RdapField label="Registrar" value={rdap.registrar ?? "Unknown"} />
+        <RdapField label="Registered" value={formatDate(rdap.registrationDate)} />
+        <RdapField label="Last updated" value={formatDate(rdap.lastUpdated)} />
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span
+          className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${bucketStyles[rdap.ageBucket]}`}
+        >
+          {bucketLabel[rdap.ageBucket]}
+        </span>
+        <span className="text-sm text-foreground/90">{rdap.ageSummary}</span>
+      </div>
+
+      <p className="text-sm leading-relaxed text-muted-foreground">{rdap.interpretation}</p>
+
+      {(rdap.nameservers.length > 0 || rdap.statuses.length > 0) && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {rdap.nameservers.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Nameservers
+              </p>
+              <ul className="mt-1 space-y-0.5 font-mono text-xs text-foreground/80">
+                {rdap.nameservers.map((n, i) => (
+                  <li key={i} className="break-all">{n}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {rdap.statuses.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Domain status
+              </p>
+              <ul className="mt-1 flex flex-wrap gap-1.5">
+                {rdap.statuses.map((s, i) => (
+                  <li
+                    key={i}
+                    className="rounded-md border border-border/60 bg-background/60 px-2 py-0.5 text-[11px] text-muted-foreground"
+                  >
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RdapField({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="rounded-md border border-border/60 bg-background/40 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className={`mt-0.5 text-sm text-foreground/90 ${mono ? "font-mono" : ""}`}>{value}</p>
+    </div>
+  );
+}
