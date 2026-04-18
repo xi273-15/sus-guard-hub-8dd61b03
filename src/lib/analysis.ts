@@ -2625,8 +2625,8 @@ async function runRecruiterLocation(args: {
   const mismatch =
     !!recruiterCountry && !!hiringCountry && recruiterCountry.toUpperCase() !== hiringCountry.toUpperCase();
 
-  const sourceText = ai.source ? ` based on ${ai.source}` : "";
-  const summary = `Recruiter public location appears to be ${ai.location}${sourceText}. (${ai.confidence} confidence)`;
+  const sourceText = aiResult.source ? ` based on ${aiResult.source}` : "";
+  const summary = `Recruiter public location appears to be ${aiResult.location}${sourceText}. (${aiResult.confidence} confidence)`;
 
   let cautionNote: string | null = null;
   let whyPoint: WhyPoint | null = null;
@@ -2637,22 +2637,22 @@ async function runRecruiterLocation(args: {
       "This differs from the claimed hiring/company context and may warrant extra verification. " +
       "Cross-border recruiter outreach is not inherently fraudulent, but it should be verified carefully, especially when combined with other weak trust signals.";
     whyPoint = {
-      finding: `Recruiter's public location (${ai.location}) appears to differ from the claimed hiring context (${hiringLabel}).`,
+      finding: `Recruiter's public location (${aiResult.location}) appears to differ from the claimed hiring context (${hiringLabel}).`,
       why: cautionNote,
       severity: "caution",
     };
     // Very small bump only — handler will optionally amplify when other weak
     // signals are present. Country alone is never proof.
-    scoreDelta = ai.confidence === "high" ? 3 : ai.confidence === "medium" ? 2 : 1;
+    scoreDelta = aiResult.confidence === "high" ? 3 : aiResult.confidence === "medium" ? 2 : 1;
   }
 
   return {
     result: {
       available: true,
-      recruiter_public_location: ai.location,
+      recruiter_public_location: aiResult.location,
       recruiter_country: recruiterCountry,
-      location_confidence: ai.confidence,
-      location_source: ai.source,
+      location_confidence: aiResult.confidence,
+      location_source: aiResult.source,
       hiring_context_label: hiringLabel,
       hiring_context_country: hiringCountry,
       mismatch,
