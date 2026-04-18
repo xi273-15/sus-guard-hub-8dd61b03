@@ -835,3 +835,87 @@ function RdapField({ label, value, mono }: { label: string; value: string; mono?
     </div>
   );
 }
+
+function DnsCardBody({ dns }: { dns: DnsResult }) {
+  if (!dns.available) {
+    return (
+      <div className="space-y-3">
+        <p className="text-sm leading-relaxed text-foreground/90">{dns.summary}</p>
+        <p className="text-sm leading-relaxed text-muted-foreground">{dns.interpretation}</p>
+      </div>
+    );
+  }
+
+  const healthStyles: Record<DnsResult["health"], string> = {
+    healthy: "text-emerald-500 border-emerald-500/30 bg-emerald-500/10",
+    thin: "text-amber-500 border-amber-500/30 bg-amber-500/10",
+    minimal: "text-orange-500 border-orange-500/30 bg-orange-500/10",
+    missing: "text-red-500 border-red-500/30 bg-red-500/10",
+    skipped: "border-border/60 bg-background/60 text-muted-foreground",
+    unknown: "border-border/60 bg-background/60 text-muted-foreground",
+  };
+  const healthLabel: Record<DnsResult["health"], string> = {
+    healthy: "Normal infrastructure",
+    thin: "Thin infrastructure",
+    minimal: "Minimal — no MX",
+    missing: "No mail or web records",
+    skipped: "Skipped",
+    unknown: "Unknown",
+  };
+
+  const records: { label: string; present: boolean }[] = [
+    { label: "MX (mail)", present: dns.hasMx },
+    { label: "SPF", present: dns.hasSpf },
+    { label: "DMARC", present: dns.hasDmarc },
+    { label: "A / AAAA (web)", present: dns.hasA || dns.hasAaaa },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <RdapField label="Checked domain" value={dns.domain ?? "—"} mono />
+        <div className="rounded-md border border-border/60 bg-background/40 px-3 py-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Status</p>
+          <span
+            className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${healthStyles[dns.health]}`}
+          >
+            {healthLabel[dns.health]}
+          </span>
+        </div>
+      </div>
+
+      <ul className="grid gap-2 sm:grid-cols-2">
+        {records.map((r) => (
+          <li
+            key={r.label}
+            className="flex items-center justify-between rounded-md border border-border/60 bg-background/40 px-3 py-2 text-sm"
+          >
+            <span className="text-foreground/90">{r.label}</span>
+            <span
+              className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                r.present
+                  ? "text-emerald-500 border-emerald-500/30 bg-emerald-500/10"
+                  : "text-red-500 border-red-500/30 bg-red-500/10"
+              }`}
+            >
+              {r.present ? "Present" : "Missing"}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <p className="text-sm leading-relaxed text-muted-foreground">{dns.interpretation}</p>
+
+      {dns.mxRecords.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">MX records</p>
+          <ul className="mt-1 space-y-0.5 font-mono text-xs text-foreground/80">
+            {dns.mxRecords.map((m, i) => (
+              <li key={i} className="break-all">{m}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
