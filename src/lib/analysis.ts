@@ -7,6 +7,8 @@ export type AnalysisInput = {
   companyDomain?: string;
   message?: string;
   headers?: string;
+  /** Optional claimed job/role location, e.g. "Berlin", "Remote-EU", "San Francisco". */
+  roleLocation?: string;
 };
 
 export type RiskLevel = "Low" | "Caution" | "High" | "Likely Scam";
