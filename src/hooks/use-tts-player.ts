@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { toast } from "sonner";
 
 type Status = "idle" | "loading" | "playing" | "paused";
 
@@ -98,7 +99,11 @@ async function play(text: string, key: string) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
     });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) {
+      const errText = await res.text();
+      const isQuota = /quota_exceeded|quota of/i.test(errText) || res.status === 401;
+      throw new Error(isQuota ? "QUOTA" : errText || `TTS failed (${res.status})`);
+    }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     currentUrl = url;
@@ -123,6 +128,18 @@ async function play(text: string, key: string) {
     console.error("TTS error:", err);
     teardown();
     setState({ status: "idle", activeKey: null, activeText: "" });
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    if (msg === "QUOTA") {
+      toast.error("Voice service is out of credits", {
+        description: "Audio narration is temporarily unavailable. All other checks still work normally.",
+        duration: 5000,
+      });
+    } else {
+      toast.error("Couldn't play audio", {
+        description: "Please try again in a moment.",
+        duration: 4000,
+      });
+    }
   }
 }
 
