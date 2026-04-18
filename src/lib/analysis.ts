@@ -1980,7 +1980,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const domainCheck = analyzeDomainAlignment(data.recruiterEmail, data.companyDomain);
 
     // ---------- Tavily OSINT + RDAP + DNS (server-side only, in parallel) ----------
-    const [osint, rdapLookup, dnsLookup, safeBrowsingLookup] = await Promise.all([
+    const [osint, rdapLookup, dnsLookup, safeBrowsingLookup, ctLookup] = await Promise.all([
       runTavilyOsint({
         recruiterName: data.recruiterName,
         companyName: data.companyName,
@@ -1997,10 +1997,14 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       runSafeBrowsing({
         companyDomain: data.companyDomain,
       }),
+      runCtLookup({
+        recruiterEmail: data.recruiterEmail,
+      }),
     ]);
     const rdap = rdapLookup.result;
     const dns = dnsLookup.result;
     const safeBrowsing = safeBrowsingLookup.result;
+    const ct = ctLookup.result;
     type HeaderAuthCheck = {
       spf: "pass" | "fail" | "softfail" | "none" | "unknown";
       dkim: "pass" | "fail" | "none" | "unknown";
