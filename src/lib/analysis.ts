@@ -44,6 +44,8 @@ export type RdapResult = {
   ageBucket: RdapAgeBucket;
   ageSummary: string;
   interpretation: string;
+  /** ISO 3166-1 alpha-2 country code from registrant address, when present. */
+  registrantCountry: string | null;
   error?: string;
 };
 
@@ -113,6 +115,28 @@ export type WaybackResult = {
   error?: string;
 };
 
+export type LocationConfidence = "low" | "medium" | "high" | "unknown";
+
+export type RecruiterLocationResult = {
+  available: boolean;
+  /** Free-form location string, e.g. "Berlin, Germany" or "United Kingdom". */
+  recruiter_public_location: string | null;
+  /** ISO 3166-1 alpha-2 country code when known. */
+  recruiter_country: string | null;
+  location_confidence: LocationConfidence;
+  /** Short human-readable description of where this came from. */
+  location_source: string | null;
+  /** Comparison context used (e.g. "Berlin (claimed role)" or "United States (company HQ)"). */
+  hiring_context_label: string | null;
+  hiring_context_country: string | null;
+  /** True if recruiter country differs from hiring context country (only when both known). */
+  mismatch: boolean;
+  /** One-line user-facing summary. */
+  summary: string;
+  /** Optional caution note, only set when mismatch is true. */
+  caution_note: string | null;
+};
+
 export type AnalysisResult = {
   risk_score: number;
   risk_level: RiskLevel;
@@ -129,6 +153,7 @@ export type AnalysisResult = {
   safe_browsing: SafeBrowsingResult;
   ct: CtResult;
   wayback: WaybackResult;
+  recruiter_location: RecruiterLocationResult;
 };
 
 type SignalKind = "scam" | "caution" | "positive";
