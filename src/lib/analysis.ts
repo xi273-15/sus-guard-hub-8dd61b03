@@ -712,6 +712,13 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const message = (data.message ?? "").trim();
     const lower = message.toLowerCase();
     const domainCheck = analyzeDomainAlignment(data.recruiterEmail, data.companyDomain);
+
+    // ---------- Tavily OSINT enrichment (server-side only) ----------
+    const osint = await runTavilyOsint({
+      recruiterName: data.recruiterName,
+      companyName: data.companyName,
+      companyDomain: data.companyDomain,
+    });
     type HeaderAuthCheck = {
       spf: "pass" | "fail" | "softfail" | "none" | "unknown";
       dkim: "pass" | "fail" | "none" | "unknown";
