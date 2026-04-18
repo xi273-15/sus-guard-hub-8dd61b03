@@ -21,9 +21,7 @@ export const Route = createFileRoute("/api/tts")({
         if (!text) {
           return new Response("Missing text", { status: 400 });
         }
-        if (text.length > 5000) {
-          return new Response("Text too long (max 5000 chars)", { status: 400 });
-        }
+        const safeText = text.length > 9500 ? text.slice(0, 9500) : text;
 
         const voiceId = body.voiceId ?? "EXAVITQu4vr4xnSDxMaL"; // Sarah — friendly, clear
 
