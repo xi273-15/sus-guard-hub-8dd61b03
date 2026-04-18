@@ -80,7 +80,7 @@ export function FloatingAudioAssistant({
 
   const orbLabel =
     status === "playing"
-      ? "Pause spoken audio"
+      ? "Stop spoken audio"
       : status === "paused"
         ? "Resume spoken audio"
         : status === "loading"
