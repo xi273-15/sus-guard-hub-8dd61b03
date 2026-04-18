@@ -1274,6 +1274,36 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         result.scoreDelta += 4;
       }
 
+      // Compact friendly summary when no issues were found.
+      // Avoids overwhelming non-technical users with three "everything is fine" bullets.
+      const hasIssue = result.explanations.some(
+        (e) => e.severity === "bad" || e.severity === "caution",
+      );
+      const hasGood = result.explanations.some((e) => e.severity === "good");
+      if (!hasIssue && hasGood) {
+        const passed: string[] = [];
+        if (result.spf === "pass") passed.push("SPF");
+        if (result.dkim === "pass") passed.push("DKIM");
+        if (result.dmarc === "pass") passed.push("DMARC");
+        const passedList = passed.length ? ` (${passed.join(", ")} passed)` : "";
+        const compact: WhyPoint = {
+          finding: "Email header looks clean — no impersonation red flags.",
+          why: `The standard sender-identity checks${passedList} all came back fine, so this email really does appear to come from where it says it does. Nothing in the header itself looks suspicious.`,
+          severity: "good",
+        };
+        result.findings = [compact.finding];
+        result.reasons = [compact.why];
+        result.explanations = [compact];
+        result.nextSteps = [];
+      } else if (hasIssue && hasGood) {
+        // Drop the "good" pointers when there are also issues — surface only
+        // what the user needs to act on, not a wall of mixed pass/fail bullets.
+        const issuesOnly = result.explanations.filter((e) => e.severity !== "good");
+        result.explanations = issuesOnly;
+        result.findings = issuesOnly.map((e) => e.finding);
+        result.reasons = issuesOnly.map((e) => e.why);
+      }
+
       return result;
     }
     const headerAuth = parseHeaderAuth(data.headers);
