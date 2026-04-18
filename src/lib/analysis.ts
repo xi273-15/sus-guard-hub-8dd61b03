@@ -74,6 +74,23 @@ export type SafeBrowsingResult = {
   error?: string;
 };
 
+export type CtHistoryBucket = "very_recent" | "recent" | "normal" | "established" | "none" | "unknown";
+
+export type CtResult = {
+  available: boolean;
+  domain: string | null;
+  certificatesFound: boolean;
+  totalCertificates: number; // count returned (capped)
+  mostRecentIssuance: string | null; // ISO
+  oldestIssuance: string | null; // ISO
+  uniqueSubdomains: string[]; // up to ~12 most relevant
+  suspiciousSubdomains: string[]; // lookalike / phishing-style names
+  history: CtHistoryBucket;
+  summary: string;
+  interpretation: string;
+  error?: string;
+};
+
 export type AnalysisResult = {
   risk_score: number;
   risk_level: RiskLevel;
@@ -88,6 +105,7 @@ export type AnalysisResult = {
   rdap: RdapResult;
   dns: DnsResult;
   safe_browsing: SafeBrowsingResult;
+  ct: CtResult;
 };
 
 type SignalKind = "scam" | "caution" | "positive";
