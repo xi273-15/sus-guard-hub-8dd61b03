@@ -2945,6 +2945,7 @@ async function runWebsiteTraffic(args: {
 }
 
 
+export const analyzeRecruiter = createServerFn({ method: "POST" })
   .inputValidator((input: AnalysisInput) => input)
   .handler(async ({ data }): Promise<AnalysisResult> => {
     const message = (data.message ?? "").trim();
