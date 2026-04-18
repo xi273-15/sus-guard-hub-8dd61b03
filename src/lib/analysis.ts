@@ -11,7 +11,7 @@ export type AnalysisInput = {
 
 export type RiskLevel = "Low" | "Caution" | "High" | "Likely Scam";
 
-export type HeaderExplanation = {
+export type WhyPoint = {
   finding: string;
   why: string;
   severity: "good" | "info" | "caution" | "bad";
@@ -22,9 +22,9 @@ export type AnalysisResult = {
   risk_level: RiskLevel;
   findings: string[];
   why_it_matters: string;
+  why_points: WhyPoint[];
   next_steps: string[];
   audio_summary: string;
-  header_explanations: HeaderExplanation[];
 };
 
 type SignalKind = "scam" | "caution" | "positive";
@@ -705,7 +705,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       findings: string[];
       reasons: string[];
       nextSteps: string[];
-      explanations: HeaderExplanation[];
+      explanations: WhyPoint[];
       scoreDelta: number;
       floor: number;
     };
@@ -776,7 +776,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
 
       // Helper to keep findings, reasons, explanations, and steps in sync.
       const note = (
-        severity: HeaderExplanation["severity"],
+        severity: WhyPoint["severity"],
         finding: string,
         why: string,
         nextStep?: string,
@@ -969,6 +969,19 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
 
       const noMsgLevel = levelFor(noMsgScore);
 
+      const noMsgWhyPoints: WhyPoint[] = [];
+      if (
+        domainCheck.finding &&
+        domainCheck.reason &&
+        domainCheck.status !== "match" &&
+        domainCheck.status !== "subdomain"
+      ) {
+        const sev: WhyPoint["severity"] =
+          noMsgNegative ? "bad" : domainCheck.status === "unverifiable" ? "info" : "caution";
+        noMsgWhyPoints.push({ finding: domainCheck.finding, why: domainCheck.reason, severity: sev });
+      }
+      headerAuth.explanations.forEach((e) => noMsgWhyPoints.push(e));
+
       return {
         risk_score: noMsgScore,
         risk_level: noMsgLevel,
@@ -976,11 +989,11 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         why_it_matters: noMsgNegative
           ? `${domainCheck.reason} Paste the recruiter's full message to get a complete risk assessment — but note that a polished message would not cancel a sender/company domain mismatch.`
           : "Without the recruiter's message we can't check for scam wording. Paste their full message to get a real risk assessment.",
+        why_points: noMsgWhyPoints,
         next_steps: baseSteps,
         audio_summary: noMsgNegative
           ? `${domainCheck.finding} Paste the recruiter's full message to get a complete risk assessment.`
           : "No message was provided. Paste the recruiter's full message to get a real risk assessment.",
-        header_explanations: headerAuth.explanations,
       };
     }
 
@@ -1134,13 +1147,43 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     }
     if (next_steps[0]) summaryParts.push(`Recommended next step: ${next_steps[0]}`);
 
+    // Build per-finding "why this matters" bullets so the user gets a clean,
+    // point-by-point breakdown instead of one big paragraph.
+    const why_points: WhyPoint[] = [];
+    if (domainIsNegative && domainCheck.finding && domainCheck.reason) {
+      why_points.push({ finding: domainCheck.finding, why: domainCheck.reason, severity: "bad" });
+    }
+    for (const m of matchedScam) {
+      why_points.push({ finding: m.finding, why: m.reason, severity: "bad" });
+    }
+    for (const m of matchedCaution) {
+      why_points.push({ finding: m.finding, why: m.reason, severity: "caution" });
+    }
+    // Email-header explanations slot in here so red flags from the headers
+    // appear right alongside the message-based findings.
+    headerAuth.explanations.forEach((e) => why_points.push(e));
+    if (domainIsPositive && domainCheck.finding && domainCheck.reason) {
+      why_points.push({ finding: domainCheck.finding, why: domainCheck.reason, severity: "good" });
+    }
+    if (
+      domainCheck.status === "unverifiable" &&
+      domainCheck.finding &&
+      domainCheck.reason &&
+      (data.recruiterEmail || data.companyDomain)
+    ) {
+      why_points.push({ finding: domainCheck.finding, why: domainCheck.reason, severity: "info" });
+    }
+    for (const m of matchedPositive) {
+      why_points.push({ finding: m.finding, why: m.reason, severity: "good" });
+    }
+
     return {
       risk_score: score,
       risk_level: level,
       findings,
       why_it_matters,
+      why_points,
       next_steps,
       audio_summary: summaryParts.join(" "),
-      header_explanations: headerAuth.explanations,
     };
   });
