@@ -2106,6 +2106,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     score += osint.scoreDelta;
     score += rdapLookup.scoreDelta;
     score += dnsLookup.scoreDelta;
+    score += safeBrowsingLookup.scoreDelta;
 
     // Cap how much positive wording can lower the score. Strong red flags
     // (high-weight scam signals or domain mismatch/lookalike/public_email)
@@ -2138,6 +2139,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     }
     if (dnsLookup.floor > 0) {
       score = Math.max(score, dnsLookup.floor);
+    }
+    if (safeBrowsingLookup.floor > 0) {
+      score = Math.max(score, safeBrowsingLookup.floor);
     }
     score = Math.max(0, Math.min(100, Math.round(score)));
     const level = levelFor(score);
@@ -2316,6 +2320,22 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     }
     if (dns.available) {
       summaryParts.push(`DNS and email infrastructure: ${dns.summary}. ${dns.interpretation}`);
+    }
+
+    // Safe Browsing findings, why-point, next step, and audio summary
+    if (safeBrowsing.safe_browsing_status === "flagged") {
+      findings.push(safeBrowsing.safe_browsing_summary);
+    }
+    if (safeBrowsingLookup.whyPoint) why_points.push(safeBrowsingLookup.whyPoint);
+    if (
+      safeBrowsingLookup.nextStep &&
+      next_steps.length < 6 &&
+      !next_steps.includes(safeBrowsingLookup.nextStep)
+    ) {
+      next_steps.push(safeBrowsingLookup.nextStep);
+    }
+    if (safeBrowsing.safe_browsing_status !== "unknown") {
+      summaryParts.push(`Site reputation: ${safeBrowsing.safe_browsing_summary}`);
     }
 
     return {
