@@ -588,6 +588,9 @@ function Index() {
           <p className="mt-1">Built to protect job seekers</p>
         </footer>
       </main>
+
+      {/* Floating accessibility audio assistant */}
+      <FloatingAudioAssistant summary={result?.audio_summary} />
     </div>
   );
 }
