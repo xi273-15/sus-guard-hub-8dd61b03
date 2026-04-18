@@ -91,6 +91,26 @@ export type CtResult = {
   error?: string;
 };
 
+export type WaybackStatus =
+  | "established"
+  | "moderate"
+  | "recent_only"
+  | "thin"
+  | "none"
+  | "unknown";
+
+export type WaybackResult = {
+  available: boolean;
+  checked_url: string | null;
+  archive_history_status: WaybackStatus;
+  first_seen_archive_date: string | null; // ISO
+  most_recent_archive_date: string | null; // ISO
+  snapshot_count: number | null;
+  website_history_summary: string;
+  interpretation: string;
+  error?: string;
+};
+
 export type AnalysisResult = {
   risk_score: number;
   risk_level: RiskLevel;
@@ -106,6 +126,7 @@ export type AnalysisResult = {
   dns: DnsResult;
   safe_browsing: SafeBrowsingResult;
   ct: CtResult;
+  wayback: WaybackResult;
 };
 
 type SignalKind = "scam" | "caution" | "positive";
