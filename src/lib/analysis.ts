@@ -1944,6 +1944,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (rdapLookup.floor > 0) {
       score = Math.max(score, rdapLookup.floor);
     }
+    if (dnsLookup.floor > 0) {
+      score = Math.max(score, dnsLookup.floor);
+    }
     score = Math.max(0, Math.min(100, Math.round(score)));
     const level = levelFor(score);
 
