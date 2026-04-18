@@ -1303,12 +1303,19 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const lower = message.toLowerCase();
     const domainCheck = analyzeDomainAlignment(data.recruiterEmail, data.companyDomain);
 
-    // ---------- Tavily OSINT enrichment (server-side only) ----------
-    const osint = await runTavilyOsint({
-      recruiterName: data.recruiterName,
-      companyName: data.companyName,
-      companyDomain: data.companyDomain,
-    });
+    // ---------- Tavily OSINT + RDAP (server-side only, in parallel) ----------
+    const [osint, rdapLookup] = await Promise.all([
+      runTavilyOsint({
+        recruiterName: data.recruiterName,
+        companyName: data.companyName,
+        companyDomain: data.companyDomain,
+      }),
+      runRdapLookup({
+        recruiterEmail: data.recruiterEmail,
+        companyName: data.companyName,
+      }),
+    ]);
+    const rdap = rdapLookup.result;
     type HeaderAuthCheck = {
       spf: "pass" | "fail" | "softfail" | "none" | "unknown";
       dkim: "pass" | "fail" | "none" | "unknown";
