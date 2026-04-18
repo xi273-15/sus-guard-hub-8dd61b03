@@ -9,6 +9,7 @@ type State = {
   activeText: string;
   duration: number;
   currentTime: number;
+  level: number; // 0..1 audio reactive level
 };
 
 const listeners = new Set<() => void>();
@@ -18,10 +19,16 @@ let state: State = {
   activeText: "",
   duration: 0,
   currentTime: 0,
+  level: 0,
 };
 let audio: HTMLAudioElement | null = null;
 let currentUrl: string | null = null;
 let rafId: number | null = null;
+
+let audioCtx: AudioContext | null = null;
+let analyser: AnalyserNode | null = null;
+let sourceNode: MediaElementAudioSourceNode | null = null;
+let freqData: Uint8Array | null = null;
 
 function setState(patch: Partial<State>) {
   state = { ...state, ...patch };
@@ -50,11 +57,45 @@ function startTracker() {
   clearTracker();
   const tick = () => {
     if (audio) {
-      setState({ currentTime: audio.currentTime, duration: audio.duration || state.duration });
+      let level = 0;
+      if (analyser && freqData) {
+        analyser.getByteFrequencyData(freqData as unknown as Uint8Array<ArrayBuffer>);
+        let sum = 0;
+        for (let i = 0; i < freqData.length; i++) sum += freqData[i];
+        level = Math.min(1, sum / freqData.length / 180);
+      }
+      setState({
+        currentTime: audio.currentTime,
+        duration: audio.duration || state.duration,
+        level,
+      });
     }
     rafId = requestAnimationFrame(tick);
   };
   rafId = requestAnimationFrame(tick);
+}
+
+function setupAnalyser(el: HTMLAudioElement) {
+  try {
+    if (!audioCtx) {
+      const Ctx =
+        (window as unknown as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext }).AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctx) return;
+      audioCtx = new Ctx();
+    }
+    if (audioCtx.state === "suspended") void audioCtx.resume();
+    sourceNode = audioCtx.createMediaElementSource(el);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 128;
+    analyser.smoothingTimeConstant = 0.75;
+    sourceNode.connect(analyser);
+    analyser.connect(audioCtx.destination);
+    freqData = new Uint8Array(analyser.frequencyBinCount);
+  } catch (e) {
+    // Analyser optional — playback still works
+    console.warn("Audio analyser unavailable", e);
+  }
 }
 
 function teardown() {
@@ -64,6 +105,23 @@ function teardown() {
     audio.src = "";
     audio = null;
   }
+  if (sourceNode) {
+    try {
+      sourceNode.disconnect();
+    } catch {
+      /* noop */
+    }
+    sourceNode = null;
+  }
+  if (analyser) {
+    try {
+      analyser.disconnect();
+    } catch {
+      /* noop */
+    }
+    analyser = null;
+  }
+  freqData = null;
   if (currentUrl) {
     URL.revokeObjectURL(currentUrl);
     currentUrl = null;
@@ -91,7 +149,14 @@ async function play(text: string, key: string) {
 
   // New track — teardown previous
   teardown();
-  setState({ status: "loading", activeKey: key, activeText: text, duration: 0, currentTime: 0 });
+  setState({
+    status: "loading",
+    activeKey: key,
+    activeText: text,
+    duration: 0,
+    currentTime: 0,
+    level: 0,
+  });
 
   try {
     const res = await fetch("/api/tts", {
@@ -108,18 +173,27 @@ async function play(text: string, key: string) {
     const url = URL.createObjectURL(blob);
     currentUrl = url;
     const a = new Audio(url);
+    a.crossOrigin = "anonymous";
     audio = a;
+    setupAnalyser(a);
     a.onloadedmetadata = () => {
       setState({ duration: a.duration });
     };
     a.onended = () => {
       clearTracker();
       teardown();
-      setState({ status: "idle", activeKey: null, activeText: "", currentTime: 0, duration: 0 });
+      setState({
+        status: "idle",
+        activeKey: null,
+        activeText: "",
+        currentTime: 0,
+        duration: 0,
+        level: 0,
+      });
     };
     a.onerror = () => {
       teardown();
-      setState({ status: "idle", activeKey: null });
+      setState({ status: "idle", activeKey: null, level: 0 });
     };
     await a.play();
     setState({ status: "playing" });
@@ -127,7 +201,7 @@ async function play(text: string, key: string) {
   } catch (err) {
     console.error("TTS error:", err);
     teardown();
-    setState({ status: "idle", activeKey: null, activeText: "" });
+    setState({ status: "idle", activeKey: null, activeText: "", level: 0 });
     const msg = err instanceof Error ? err.message : "Unknown error";
     if (msg === "QUOTA") {
       toast.error("Voice service is out of credits", {
@@ -153,7 +227,14 @@ function pause() {
 
 function stop() {
   teardown();
-  setState({ status: "idle", activeKey: null, activeText: "", currentTime: 0, duration: 0 });
+  setState({
+    status: "idle",
+    activeKey: null,
+    activeText: "",
+    currentTime: 0,
+    duration: 0,
+    level: 0,
+  });
 }
 
 export function useTtsPlayer() {

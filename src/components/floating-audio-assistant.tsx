@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef } from "react";
-import { Play, Pause, Loader2, Accessibility } from "lucide-react";
+import { useMemo } from "react";
+import { Play, Pause, Loader2, MessageCircle, Accessibility } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTtsPlayer } from "@/hooks/use-tts-player";
 
@@ -32,32 +32,18 @@ function splitIntoLines(text: string): Line[] {
 export function FloatingAudioAssistant({
   summary,
   introScript,
-  autoPlayIntro,
 }: {
   summary?: string;
   introScript?: string;
+  /** @deprecated autoplay is intentionally disabled — kept for backwards compatibility */
   autoPlayIntro?: boolean;
 }) {
-  const { play, status, activeKey, activeText, currentTime, duration } = useTtsPlayer();
+  const { play, status, activeKey, activeText, currentTime, duration, level } = useTtsPlayer();
 
-  // Decide what this orb should play when clicked: prefer summary, fallback to intro
+  // Decide what this orb should play when triggered: prefer summary, fallback to intro
   const primaryText = summary?.trim() || introScript?.trim() || "";
   const primaryKey = summary?.trim() ? "analysis:summary" : "intro:welcome";
-
-  // Auto-play intro once per session
-  const introFiredRef = useRef(false);
-  useEffect(() => {
-    if (!autoPlayIntro || !introScript) return;
-    if (introFiredRef.current) return;
-    if (typeof window === "undefined") return;
-    if (sessionStorage.getItem("suscruit_intro_played") === "1") return;
-    introFiredRef.current = true;
-    const t = setTimeout(() => {
-      sessionStorage.setItem("suscruit_intro_played", "1");
-      play(introScript, "intro:welcome");
-    }, 600);
-    return () => clearTimeout(t);
-  }, [autoPlayIntro, introScript, play]);
+  const hasContent = primaryText.length > 0;
 
   const lines = useMemo(() => splitIntoLines(activeText || ""), [activeText]);
   const totalWords = useMemo(
@@ -81,46 +67,65 @@ export function FloatingAudioAssistant({
     return { activeLine: 0, activeWord: 0 };
   }, [currentTime, duration, totalWords, lines]);
 
-  const hasContent = primaryText.length > 0;
   const isActiveAnything = status === "playing" || status === "paused" || status === "loading";
+  const hasStarted = isActiveAnything; // playback has begun (or is being prepared)
   const showSubtitle =
     isActiveAnything && lines.length > 0 && (status === "playing" || status === "paused");
   const currentLine = lines[activeLine];
 
-  const buttonLabel =
-    status === "playing"
-      ? "Pause spoken summary"
-      : status === "loading"
-        ? "Generating spoken audio"
-        : status === "paused"
-          ? "Resume spoken audio"
-          : "Play spoken summary";
+  // Audio-reactive scale for the orb rings (smoothed)
+  const reactive = status === "playing" ? level : 0;
+  const ringScale = 1 + reactive * 0.18;
+  const haloOpacity = 0.35 + reactive * 0.5;
 
-  function handleClick() {
-    if (!hasContent) return;
+  const orbLabel =
+    status === "playing"
+      ? "Pause spoken audio"
+      : status === "paused"
+        ? "Resume spoken audio"
+        : status === "loading"
+          ? "Generating spoken audio"
+          : hasContent
+            ? "Voice assistant ready — use the speech bubble to start"
+            : "Voice assistant";
+
+  const triggerLabel =
+    status === "loading"
+      ? "Generating audio"
+      : hasStarted
+        ? "Audio playing — use the orb to pause"
+        : "Read aloud";
+
+  function handleTriggerClick() {
+    if (!hasContent || hasStarted) return;
+    play(primaryText, primaryKey);
+  }
+
+  function handleOrbClick() {
+    // Orb only toggles pause/resume once playback has begun.
+    if (!hasStarted) return;
     play(primaryText, primaryKey);
   }
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-50 flex items-center gap-2 sm:bottom-6 sm:right-6"
+      className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2 sm:bottom-6 sm:right-6"
       role="region"
       aria-label="Accessibility audio assistant"
     >
-      {/* Subtitle strip */}
+      {/* Subtitle strip — sits above the orb visually */}
       <div
         aria-live="polite"
         aria-atomic="true"
         className={cn(
-          "pointer-events-none max-w-[min(22rem,calc(100vw-6rem))] origin-right transition-all duration-300 ease-out",
-          showSubtitle
-            ? "translate-x-0 opacity-100 scale-100"
-            : "translate-x-3 opacity-0 scale-95",
+          "pointer-events-none relative z-20 max-w-[min(22rem,calc(100vw-3rem))] origin-bottom-right transition-all duration-300 ease-out",
+          showSubtitle ? "opacity-100 scale-100 translate-y-0" : "opacity-0 scale-95 translate-y-1",
         )}
       >
         {showSubtitle && currentLine && (
           <div
-            className="rounded-full border border-border/60 bg-card/90 px-3 py-1.5 text-xs leading-snug shadow-[var(--shadow-elegant)] backdrop-blur-xl sm:text-sm"
+            // Inverted contrast: dark bubble in light mode, light bubble in dark mode
+            className="rounded-2xl border border-foreground/10 bg-foreground px-3.5 py-2 text-xs leading-snug text-background shadow-[0_10px_30px_-10px_rgba(0,0,0,0.45)] sm:text-sm"
             key={`${activeKey}-${activeLine}`}
           >
             <p className="m-0 whitespace-normal">
@@ -133,10 +138,10 @@ export function FloatingAudioAssistant({
                     className={cn(
                       "transition-colors duration-150",
                       isActive
-                        ? "font-semibold text-foreground"
+                        ? "font-semibold text-background"
                         : isPast
-                          ? "text-muted-foreground/80"
-                          : "text-muted-foreground",
+                          ? "text-background/60"
+                          : "text-background/85",
                     )}
                   >
                     {i > 0 ? " " : ""}
@@ -149,96 +154,118 @@ export function FloatingAudioAssistant({
         )}
       </div>
 
-      {/* Floating orb */}
-      <button
-        type="button"
-        onClick={handleClick}
-        disabled={status === "loading" || !hasContent}
-        aria-label={buttonLabel}
-        title={!hasContent ? "Audio not available yet" : buttonLabel}
-        className={cn(
-          "pointer-events-auto group relative inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-primary-foreground shadow-[var(--shadow-glow)] outline-none transition-transform focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 sm:h-16 sm:w-16",
-        )}
-        style={{ background: "var(--gradient-primary)" }}
-      >
-        {status === "idle" && hasContent && (
-          <span
-            aria-hidden
-            className="absolute inset-0 rounded-full animate-pulse-glow"
-            style={{
-              boxShadow: "0 0 24px color-mix(in oklab, var(--primary) 45%, transparent)",
-            }}
-          />
+      {/* Controls row */}
+      <div className="relative z-10 flex items-end gap-2">
+        {/* Speech-bubble trigger — explicit "start reading" control */}
+        {!hasStarted && (
+          <button
+            type="button"
+            onClick={handleTriggerClick}
+            disabled={!hasContent}
+            aria-label={triggerLabel}
+            title={!hasContent ? "Audio not available yet" : triggerLabel}
+            className={cn(
+              "pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/90 px-3 py-2 text-xs font-medium text-foreground shadow-[var(--shadow-elegant)] backdrop-blur-xl transition-all hover:scale-[1.03] hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm",
+            )}
+          >
+            <MessageCircle className="h-4 w-4" />
+            <span>Read aloud</span>
+          </button>
         )}
 
-        {status === "playing" && (
-          <>
+        {/* Floating orb — pause/resume control (only meaningful once started) */}
+        <button
+          type="button"
+          onClick={handleOrbClick}
+          disabled={!hasStarted || status === "loading"}
+          aria-label={orbLabel}
+          title={orbLabel}
+          className={cn(
+            "pointer-events-auto group relative inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-primary-foreground shadow-[var(--shadow-glow)] outline-none transition-transform focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background hover:scale-105 active:scale-95 disabled:cursor-default sm:h-16 sm:w-16",
+            !hasStarted && "opacity-90",
+          )}
+          style={{ background: "var(--gradient-primary)" }}
+        >
+          {/* Audio-reactive halo (only while playing) */}
+          {status === "playing" && (
+            <>
+              <span
+                aria-hidden
+                className="absolute inset-0 rounded-full transition-transform duration-100 ease-out"
+                style={{
+                  transform: `scale(${ringScale})`,
+                  boxShadow: `0 0 ${18 + reactive * 26}px color-mix(in oklab, var(--primary) ${Math.round(35 + reactive * 40)}%, transparent)`,
+                  opacity: haloOpacity,
+                }}
+              />
+              <span
+                aria-hidden
+                className="absolute -inset-1 rounded-full transition-transform duration-150 ease-out"
+                style={{
+                  transform: `scale(${1 + reactive * 0.28})`,
+                  background: `conic-gradient(from 0deg, color-mix(in oklab, var(--primary) ${Math.round(40 + reactive * 30)}%, transparent), transparent 55%, color-mix(in oklab, var(--cyber) ${Math.round(35 + reactive * 30)}%, transparent), transparent)`,
+                  animation: "spin 4s linear infinite",
+                  filter: `blur(${4 + reactive * 4}px)`,
+                  opacity: 0.55 + reactive * 0.4,
+                }}
+              />
+              {/* Waveform-like rim bars */}
+              <span aria-hidden className="absolute inset-0 rounded-full overflow-hidden">
+                {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
+                  const h = 4 + reactive * 12 + Math.sin((Date.now() / 120) + i) * 2;
+                  return (
+                    <span
+                      key={i}
+                      className="absolute left-1/2 top-1/2 origin-bottom rounded-full bg-primary-foreground/40"
+                      style={{
+                        width: 2,
+                        height: `${h}px`,
+                        transform: `translate(-50%, -50%) rotate(${i * 45}deg) translateY(-${(typeof window !== "undefined" && window.innerWidth >= 640 ? 30 : 26)}px)`,
+                      }}
+                    />
+                  );
+                })}
+              </span>
+            </>
+          )}
+
+          {status === "paused" && (
             <span
               aria-hidden
-              className="absolute inset-0 rounded-full animate-ping"
+              className="absolute inset-0 rounded-full"
               style={{
-                background: "color-mix(in oklab, var(--primary) 30%, transparent)",
-                animationDuration: "1.6s",
+                boxShadow: "0 0 18px color-mix(in oklab, var(--primary) 30%, transparent)",
               }}
             />
+          )}
+
+          {status === "loading" && (
             <span
               aria-hidden
-              className="absolute -inset-1 rounded-full animate-ping"
-              style={{
-                background: "color-mix(in oklab, var(--cyber) 22%, transparent)",
-                animationDuration: "2.2s",
-                animationDelay: "0.3s",
-              }}
-            />
-            <span
-              aria-hidden
-              className="absolute -inset-2 rounded-full opacity-70"
+              className="absolute -inset-1 rounded-full"
               style={{
                 background:
-                  "conic-gradient(from 0deg, color-mix(in oklab, var(--primary) 60%, transparent), transparent 60%, color-mix(in oklab, var(--cyber) 50%, transparent), transparent)",
-                animation: "spin 3.5s linear infinite",
-                filter: "blur(6px)",
+                  "conic-gradient(from 0deg, var(--primary), transparent 50%, var(--cyber), transparent)",
+                animation: "spin 1.2s linear infinite",
+                filter: "blur(2px)",
+                opacity: 0.85,
               }}
             />
-          </>
-        )}
-
-        {status === "paused" && (
-          <span
-            aria-hidden
-            className="absolute inset-0 rounded-full"
-            style={{
-              boxShadow: "0 0 18px color-mix(in oklab, var(--primary) 35%, transparent)",
-            }}
-          />
-        )}
-
-        {status === "loading" && (
-          <span
-            aria-hidden
-            className="absolute -inset-1 rounded-full"
-            style={{
-              background:
-                "conic-gradient(from 0deg, var(--primary), transparent 50%, var(--cyber), transparent)",
-              animation: "spin 1.2s linear infinite",
-              filter: "blur(2px)",
-              opacity: 0.85,
-            }}
-          />
-        )}
-
-        <span className="relative flex items-center justify-center">
-          {status === "loading" ? (
-            <Loader2 className="h-6 w-6 animate-spin" />
-          ) : status === "playing" ? (
-            <Pause className="h-6 w-6 fill-current" />
-          ) : hasContent ? (
-            <Play className="h-6 w-6 fill-current" />
-          ) : (
-            <Accessibility className="h-6 w-6" />
           )}
-        </span>
-      </button>
+
+          <span className="relative flex items-center justify-center">
+            {status === "loading" ? (
+              <Loader2 className="h-6 w-6 animate-spin" />
+            ) : status === "playing" ? (
+              <Pause className="h-6 w-6 fill-current" />
+            ) : status === "paused" ? (
+              <Play className="h-6 w-6 fill-current" />
+            ) : (
+              <Accessibility className="h-6 w-6" />
+            )}
+          </span>
+        </button>
+      </div>
     </div>
   );
 }
