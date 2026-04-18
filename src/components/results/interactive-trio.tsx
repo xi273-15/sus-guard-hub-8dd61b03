@@ -125,38 +125,35 @@ function Panel({
           : undefined
       }
     >
-      <button
-        type="button"
-        onClick={() => onActivate(id)}
-        aria-expanded={isOpen}
-        className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <span className="flex items-center gap-2.5">
-          <span
-            className={cn(
-              "inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors",
-              isOpen ? "text-primary" : "text-muted-foreground",
-            )}
-            style={
-              isOpen
-                ? { backgroundColor: "color-mix(in oklab, var(--primary) 14%, transparent)" }
-                : undefined
-            }
-          >
-            {icon}
-          </span>
-          <span
-            className={cn(
-              "text-sm font-semibold sm:text-base",
-              isOpen ? "text-foreground" : "text-foreground/80",
-            )}
-          >
-            {title}
-          </span>
-        </span>
-        <span className="flex items-center gap-1">
-          <span onClick={(e) => e.stopPropagation()} role="presentation">
-            <SpeakButton text={voice.text} trackKey={voice.key} />
+      <div className="flex w-full items-center gap-3 px-5 py-4">
+        <button
+          type="button"
+          onClick={() => onActivate(id)}
+          aria-expanded={isOpen}
+          className="flex flex-1 items-center justify-between gap-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <span className="flex items-center gap-2.5">
+            <span
+              className={cn(
+                "inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors",
+                isOpen ? "text-primary" : "text-muted-foreground",
+              )}
+              style={
+                isOpen
+                  ? { backgroundColor: "color-mix(in oklab, var(--primary) 14%, transparent)" }
+                  : undefined
+              }
+            >
+              {icon}
+            </span>
+            <span
+              className={cn(
+                "text-sm font-semibold sm:text-base",
+                isOpen ? "text-foreground" : "text-foreground/80",
+              )}
+            >
+              {title}
+            </span>
           </span>
           <ChevronDown
             className={cn(
@@ -164,8 +161,9 @@ function Panel({
               isOpen ? "rotate-180" : "rotate-0",
             )}
           />
-        </span>
-      </button>
+        </button>
+        <SpeakButton text={voice.text} trackKey={voice.key} />
+      </div>
 
       <div
         className={cn(
