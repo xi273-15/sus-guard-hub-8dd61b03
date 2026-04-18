@@ -592,6 +592,17 @@ function Index() {
           >
             {result && <RdapCardBody rdap={result.rdap} />}
           </ResultCard>
+
+          <ResultCard
+            icon={<Network className="h-4 w-4" />}
+            title="DNS and email infrastructure"
+            description="Whether the recruiter's email domain has normal mail (MX), authentication (SPF/DMARC), and web (A/AAAA) records."
+            full
+            loading={loading}
+            hasData={!!result}
+          >
+            {result && <DnsCardBody dns={result.dns} />}
+          </ResultCard>
         </section>
 
         <footer className="mt-16 border-t border-border/60 pt-8 pb-6 text-center text-sm text-muted-foreground">
