@@ -43,11 +43,12 @@ function ConfidenceChip({ level }: { level: "low" | "medium" | "high" | "unknown
   return (
     <span
       className={cn(
-        "inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+        "inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider leading-none",
         cls,
       )}
+      title={`${level} confidence`}
     >
-      {level} confidence
+      {level}
     </span>
   );
 }
@@ -59,11 +60,11 @@ function StatusChip({ status }: { status: "available" | "limited" | "unavailable
       : status === "limited"
         ? "text-amber-500 border-amber-500/30 bg-amber-500/10"
         : "border-border/60 bg-background/60 text-muted-foreground";
-  const label = status === "available" ? "Estimate found" : status === "limited" ? "Limited data" : "No data";
+  const label = status === "available" ? "Found" : status === "limited" ? "Limited" : "No data";
   return (
     <span
       className={cn(
-        "inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+        "inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider leading-none",
         cls,
       )}
     >
