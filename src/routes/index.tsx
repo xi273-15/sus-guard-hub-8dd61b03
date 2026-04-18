@@ -20,6 +20,7 @@ import {
   ExternalLink,
   CalendarClock,
   Network,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +35,7 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/theme-toggle";
-import type { RdapResult, DnsResult } from "@/lib/analysis";
+import type { RdapResult, DnsResult, SafeBrowsingResult } from "@/lib/analysis";
 import { analyzeRecruiter, type AnalysisResult } from "@/lib/analysis";
 import { FloatingAudioAssistant } from "@/components/floating-audio-assistant";
 
@@ -602,6 +603,17 @@ function Index() {
             hasData={!!result}
           >
             {result && <DnsCardBody dns={result.dns} />}
+          </ResultCard>
+
+          <ResultCard
+            icon={<ShieldCheck className="h-4 w-4" />}
+            title="Site reputation"
+            description="Whether the company website is currently flagged by Google Safe Browsing for malware, phishing, or other harmful content."
+            full
+            loading={loading}
+            hasData={!!result}
+          >
+            {result && <SafeBrowsingCardBody safeBrowsing={result.safe_browsing} />}
           </ResultCard>
         </section>
 
