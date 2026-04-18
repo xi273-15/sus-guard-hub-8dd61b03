@@ -196,10 +196,10 @@ function Index() {
         </p>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 pb-20">
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
-          {/* Form column */}
-          <div className="space-y-6">
+      <main className="mx-auto max-w-3xl px-6 pb-20">
+        {stage === "input" && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+
             <Card className="border-border/60 bg-card/85 shadow-[var(--shadow-elegant)] backdrop-blur">
               <CardHeader className="border-b border-border/60">
                 <div className="flex items-start justify-between gap-4">
