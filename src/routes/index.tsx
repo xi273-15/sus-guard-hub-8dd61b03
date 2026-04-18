@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import {
   Shield,
   ShieldAlert,
@@ -13,10 +13,7 @@ import {
   ListChecks,
   Info,
   Sparkles,
-  Volume2,
-  Square,
   Loader2,
-  Accessibility,
   CheckCircle2,
   Mailbox,
   Globe2,
@@ -36,6 +33,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { analyzeRecruiter, type AnalysisResult } from "@/lib/analysis";
+import { FloatingAudioAssistant } from "@/components/floating-audio-assistant";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -394,10 +392,9 @@ function Index() {
               </CardContent>
             </Card>
 
-            {/* Listen to this analysis */}
-            <ListenCard summary={result?.audio_summary} />
           </aside>
         </div>
+
 
         {/* Detailed results */}
         <section aria-labelledby="results-heading" className="mt-12 space-y-5">
@@ -588,6 +585,9 @@ function Index() {
           <p className="mt-1">Built to protect job seekers</p>
         </footer>
       </main>
+
+      {/* Floating accessibility audio assistant */}
+      <FloatingAudioAssistant summary={result?.audio_summary} />
     </div>
   );
 }
@@ -652,107 +652,6 @@ function Field({
   );
 }
 
-function ListenCard({ summary }: { summary?: string }) {
-  const [status, setStatus] = useState<"idle" | "loading" | "playing">("idle");
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  const fallback =
-    "Here is a spoken summary of your recruiter analysis. Once you run a check, this will read out the overall risk score, the risk category, the key signals we found in the email and message, why those signals matter for your safety, and the recommended next steps you can take to verify the recruiter or protect yourself.";
-
-  const stop = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
-      audioRef.current = null;
-    }
-    setStatus("idle");
-  };
-
-  const play = async () => {
-    try {
-      stop();
-      setStatus("loading");
-      const res = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: summary || fallback }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      audio.onended = () => {
-        URL.revokeObjectURL(url);
-        setStatus("idle");
-      };
-      audio.onerror = () => {
-        URL.revokeObjectURL(url);
-        setStatus("idle");
-      };
-      await audio.play();
-      setStatus("playing");
-    } catch (err) {
-      console.error("TTS error:", err);
-      setStatus("idle");
-    }
-  };
-
-  return (
-    <Card className="border-border/60 bg-card/85 shadow-[var(--shadow-elegant)] backdrop-blur">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base font-semibold">
-          <span
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-primary"
-            style={{ backgroundColor: "color-mix(in oklab, var(--primary) 14%, transparent)" }}
-          >
-            <Accessibility className="h-4 w-4" />
-          </span>
-          Listen to this analysis
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          Listen to a spoken summary of your analysis. This feature is designed for
-          accessibility and powered by ElevenLabs.
-        </p>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            onClick={play}
-            disabled={status === "loading"}
-            className="flex-1 text-primary-foreground shadow-[var(--shadow-glow)] hover:opacity-95 transition-opacity"
-            style={{ background: "var(--gradient-primary)" }}
-            aria-label="Play audio summary of the analysis"
-          >
-            {status === "loading" ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Generating…
-              </>
-            ) : (
-              <>
-                <Volume2 className="h-4 w-4" />
-                Read analysis aloud
-              </>
-            )}
-          </Button>
-          {status === "playing" && (
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={stop}
-              aria-label="Stop audio"
-            >
-              <Square className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 function ResultCard({
   icon,
