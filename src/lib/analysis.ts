@@ -2216,7 +2216,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const domainCheck = analyzeDomainAlignment(data.recruiterEmail, data.companyDomain);
 
     // ---------- Tavily OSINT + RDAP + DNS (server-side only, in parallel) ----------
-    const [osint, rdapLookup, dnsLookup, safeBrowsingLookup, ctLookup] = await Promise.all([
+    const [osint, rdapLookup, dnsLookup, safeBrowsingLookup, ctLookup, waybackLookup] = await Promise.all([
       runTavilyOsint({
         recruiterName: data.recruiterName,
         companyName: data.companyName,
@@ -2236,11 +2236,15 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       runCtLookup({
         recruiterEmail: data.recruiterEmail,
       }),
+      runWayback({
+        companyDomain: data.companyDomain,
+      }),
     ]);
     const rdap = rdapLookup.result;
     const dns = dnsLookup.result;
     const safeBrowsing = safeBrowsingLookup.result;
     const ct = ctLookup.result;
+    const wayback = waybackLookup.result;
     type HeaderAuthCheck = {
       spf: "pass" | "fail" | "softfail" | "none" | "unknown";
       dkim: "pass" | "fail" | "none" | "unknown";
@@ -2590,6 +2594,16 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         baseFindings.push(`No CT certificates found for ${ct.domain}`);
       }
       if (ctLookup.nextStep) baseSteps.push(ctLookup.nextStep);
+      if (waybackLookup.scoreDelta > 0) {
+        noMsgScore = Math.min(95, noMsgScore + waybackLookup.scoreDelta);
+      } else if (waybackLookup.scoreDelta < 0) {
+        noMsgScore = Math.max(0, noMsgScore + waybackLookup.scoreDelta);
+      }
+      if (waybackLookup.floor > 0) noMsgScore = Math.max(noMsgScore, waybackLookup.floor);
+      if (wayback.available) {
+        baseFindings.push(`Web history for ${wayback.checked_url}: ${wayback.website_history_summary}`);
+      }
+      if (waybackLookup.nextStep) baseSteps.push(waybackLookup.nextStep);
 
       const noMsgLevel = levelFor(noMsgScore);
 
@@ -2610,6 +2624,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (dnsLookup.whyPoint) noMsgWhyPoints.push(dnsLookup.whyPoint);
       if (safeBrowsingLookup.whyPoint) noMsgWhyPoints.push(safeBrowsingLookup.whyPoint);
       if (ctLookup.whyPoint) noMsgWhyPoints.push(ctLookup.whyPoint);
+      if (waybackLookup.whyPoint) noMsgWhyPoints.push(waybackLookup.whyPoint);
 
       return {
         risk_score: noMsgScore,
@@ -2673,6 +2688,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     score += dnsLookup.scoreDelta;
     score += safeBrowsingLookup.scoreDelta;
     score += ctLookup.scoreDelta;
+    score += waybackLookup.scoreDelta;
 
     // Cap how much positive wording can lower the score. Strong red flags
     // (high-weight scam signals or domain mismatch/lookalike/public_email)
@@ -2711,6 +2727,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     }
     if (ctLookup.floor > 0) {
       score = Math.max(score, ctLookup.floor);
+    }
+    if (waybackLookup.floor > 0) {
+      score = Math.max(score, waybackLookup.floor);
     }
     score = Math.max(0, Math.min(100, Math.round(score)));
     const level = levelFor(score);
