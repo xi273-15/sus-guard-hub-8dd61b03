@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Play, Pause, Loader2, Accessibility } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-type Status = "idle" | "loading" | "playing" | "paused";
+import { useTtsPlayer } from "@/hooks/use-tts-player";
 
 type Line = { text: string; words: string[] };
 
@@ -14,7 +13,6 @@ function splitIntoLines(text: string): Line[] {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  // Further break long sentences into ~8-word lines for subtitle feel
   const lines: Line[] = [];
   for (const s of sentences) {
     const words = s.split(/\s+/);
@@ -31,136 +29,77 @@ function splitIntoLines(text: string): Line[] {
   return lines.length ? lines : [{ text: text.trim(), words: text.trim().split(/\s+/) }];
 }
 
-export function FloatingAudioAssistant({ summary }: { summary?: string }) {
-  const [status, setStatus] = useState<Status>("idle");
-  const [activeLine, setActiveLine] = useState(0);
-  const [activeWord, setActiveWord] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const rafRef = useRef<number | null>(null);
+export function FloatingAudioAssistant({
+  summary,
+  introScript,
+  autoPlayIntro,
+}: {
+  summary?: string;
+  introScript?: string;
+  autoPlayIntro?: boolean;
+}) {
+  const { play, status, activeKey, activeText, currentTime, duration } = useTtsPlayer();
 
-  const lines = useMemo(() => splitIntoLines(summary || ""), [summary]);
-  const totalWords = useMemo(() => lines.reduce((acc, l) => acc + l.words.length, 0), [lines]);
-  const hasContent = lines.length > 0;
+  // Decide what this orb should play when clicked: prefer summary, fallback to intro
+  const primaryText = summary?.trim() || introScript?.trim() || "";
+  const primaryKey = summary?.trim() ? "analysis:summary" : "intro:welcome";
 
-  // Reset when the analysis (summary) changes
+  // Auto-play intro once per session
+  const introFiredRef = useRef(false);
   useEffect(() => {
-    stopAudio();
-    setActiveLine(0);
-    setActiveWord(0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [summary]);
+    if (!autoPlayIntro || !introScript) return;
+    if (introFiredRef.current) return;
+    if (typeof window === "undefined") return;
+    if (sessionStorage.getItem("suscruit_intro_played") === "1") return;
+    introFiredRef.current = true;
+    const t = setTimeout(() => {
+      sessionStorage.setItem("suscruit_intro_played", "1");
+      play(introScript, "intro:welcome");
+    }, 600);
+    return () => clearTimeout(t);
+  }, [autoPlayIntro, introScript, play]);
 
-  useEffect(() => {
-    return () => {
-      stopAudio();
-    };
-  }, []);
+  const lines = useMemo(() => splitIntoLines(activeText || ""), [activeText]);
+  const totalWords = useMemo(
+    () => lines.reduce((acc, l) => acc + l.words.length, 0),
+    [lines],
+  );
 
-  function clearTracker() {
-    if (rafRef.current !== null) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
-  }
-
-  function startTracker(audio: HTMLAudioElement, total: number) {
-    clearTracker();
-    if (!total || !isFinite(total) || totalWords === 0) return;
-
-    const tick = () => {
-      const ratio = Math.min(1, Math.max(0, audio.currentTime / total));
-      const wordIdx = Math.min(totalWords - 1, Math.floor(ratio * totalWords));
-      // Find which line this word lives in
-      let cumulative = 0;
-      for (let i = 0; i < lines.length; i++) {
-        const len = lines[i].words.length;
-        if (wordIdx < cumulative + len) {
-          setActiveLine(i);
-          setActiveWord(wordIdx - cumulative);
-          break;
-        }
-        cumulative += len;
+  // Compute active line/word from currentTime
+  const { activeLine, activeWord } = useMemo(() => {
+    if (!duration || !totalWords) return { activeLine: 0, activeWord: 0 };
+    const ratio = Math.min(1, Math.max(0, currentTime / duration));
+    const wordIdx = Math.min(totalWords - 1, Math.floor(ratio * totalWords));
+    let cumulative = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const len = lines[i].words.length;
+      if (wordIdx < cumulative + len) {
+        return { activeLine: i, activeWord: wordIdx - cumulative };
       }
-      rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-  }
+      cumulative += len;
+    }
+    return { activeLine: 0, activeWord: 0 };
+  }, [currentTime, duration, totalWords, lines]);
 
-  function stopAudio() {
-    clearTracker();
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
-      audioRef.current = null;
-    }
-    setStatus("idle");
-  }
-
-  async function handleClick() {
-    if (status === "loading") return;
-    if (status === "playing" && audioRef.current) {
-      audioRef.current.pause();
-      setStatus("paused");
-      clearTracker();
-      return;
-    }
-    if (status === "paused" && audioRef.current) {
-      await audioRef.current.play();
-      setStatus("playing");
-      if (duration) startTracker(audioRef.current, duration);
-      return;
-    }
-
-    if (!summary) return;
-    try {
-      setStatus("loading");
-      const res = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: summary }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      audio.onloadedmetadata = () => {
-        const d = audio.duration;
-        setDuration(d);
-        startTracker(audio, d);
-      };
-      audio.onended = () => {
-        URL.revokeObjectURL(url);
-        clearTracker();
-        setStatus("idle");
-        setActiveLine(0);
-        setActiveWord(0);
-      };
-      audio.onerror = () => {
-        URL.revokeObjectURL(url);
-        clearTracker();
-        setStatus("idle");
-      };
-      await audio.play();
-      setStatus("playing");
-    } catch (err) {
-      console.error("TTS error:", err);
-      setStatus("idle");
-    }
-  }
+  const hasContent = primaryText.length > 0;
+  const isActiveAnything = status === "playing" || status === "paused" || status === "loading";
+  const showSubtitle =
+    isActiveAnything && lines.length > 0 && (status === "playing" || status === "paused");
+  const currentLine = lines[activeLine];
 
   const buttonLabel =
     status === "playing"
       ? "Pause spoken summary"
       : status === "loading"
-        ? "Generating spoken summary"
+        ? "Generating spoken audio"
         : status === "paused"
-          ? "Resume spoken summary"
-          : "Play spoken summary of analysis";
+          ? "Resume spoken audio"
+          : "Play spoken summary";
 
-  const showSubtitle = hasContent && (status === "playing" || status === "paused");
-  const currentLine = lines[activeLine];
+  function handleClick() {
+    if (!hasContent) return;
+    play(primaryText, primaryKey);
+  }
 
   return (
     <div
@@ -182,7 +121,7 @@ export function FloatingAudioAssistant({ summary }: { summary?: string }) {
         {showSubtitle && currentLine && (
           <div
             className="rounded-full border border-border/60 bg-card/90 px-3 py-1.5 text-xs leading-snug shadow-[var(--shadow-elegant)] backdrop-blur-xl sm:text-sm"
-            key={activeLine}
+            key={`${activeKey}-${activeLine}`}
           >
             <p className="m-0 whitespace-normal">
               {currentLine.words.map((w, i) => {
@@ -208,24 +147,20 @@ export function FloatingAudioAssistant({ summary }: { summary?: string }) {
             </p>
           </div>
         )}
-        {hasContent && status === "idle" && (
-          <div className="sr-only">Spoken summary ready. Press play to listen.</div>
-        )}
       </div>
 
       {/* Floating orb */}
       <button
         type="button"
         onClick={handleClick}
-        disabled={status === "loading" || (!hasContent && status === "idle")}
+        disabled={status === "loading" || !hasContent}
         aria-label={buttonLabel}
-        title={!hasContent ? "Run an analysis to enable audio" : buttonLabel}
+        title={!hasContent ? "Audio not available yet" : buttonLabel}
         className={cn(
           "pointer-events-auto group relative inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-primary-foreground shadow-[var(--shadow-glow)] outline-none transition-transform focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 sm:h-16 sm:w-16",
         )}
         style={{ background: "var(--gradient-primary)" }}
       >
-        {/* Idle soft glow */}
         {status === "idle" && hasContent && (
           <span
             aria-hidden
@@ -236,7 +171,6 @@ export function FloatingAudioAssistant({ summary }: { summary?: string }) {
           />
         )}
 
-        {/* Playing — multi-ring waveform-like ripple */}
         {status === "playing" && (
           <>
             <span
@@ -269,7 +203,6 @@ export function FloatingAudioAssistant({ summary }: { summary?: string }) {
           </>
         )}
 
-        {/* Paused — gentle steady ring */}
         {status === "paused" && (
           <span
             aria-hidden
@@ -280,7 +213,6 @@ export function FloatingAudioAssistant({ summary }: { summary?: string }) {
           />
         )}
 
-        {/* Loading — rotating gradient ring */}
         {status === "loading" && (
           <span
             aria-hidden

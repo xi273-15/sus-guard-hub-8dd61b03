@@ -1,5 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { SpeakButton } from "@/components/speak-button";
+import { HeadersHelpDialog } from "@/components/headers-help-dialog";
+import { ArrowLeft } from "lucide-react";
 import {
   Shield,
   ShieldAlert,
@@ -103,6 +106,7 @@ function Index() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [stage, setStage] = useState<"input" | "results">("input");
 
   const update = (k: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -114,9 +118,9 @@ function Index() {
     try {
       const res = await analyzeRecruiter({ data: form });
       setResult(res);
-      // Smooth scroll to results on small screens
+      setStage("results");
       requestAnimationFrame(() => {
-        document.getElementById("results-heading")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        window.scrollTo({ top: 0, behavior: "smooth" });
       });
     } catch (err) {
       console.error(err);
@@ -125,6 +129,17 @@ function Index() {
       setLoading(false);
     }
   };
+
+  const resetToInput = () => {
+    setStage("input");
+    setResult(null);
+    setError(null);
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+  };
+
+  const introScript =
+    "Welcome to Suscruit. I help you check if a recruiter who contacted you might be a scam. Just fill in what you know — the recruiter's name and email, the company they claim to represent, their message, and if you have it, the raw email headers. Tap the small speaker icon next to any field to hear what it's for. When you're ready, hit Analyze and I'll walk you through what we found.";
+
 
   return (
     <div className="relative min-h-screen bg-background text-foreground">
@@ -181,10 +196,10 @@ function Index() {
         </p>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 pb-20">
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px]">
-          {/* Form column */}
-          <div className="space-y-6">
+      <main className="mx-auto max-w-3xl px-6 pb-20">
+        {stage === "input" && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+
             <Card className="border-border/60 bg-card/85 shadow-[var(--shadow-elegant)] backdrop-blur">
               <CardHeader className="border-b border-border/60">
                 <div className="flex items-start justify-between gap-4">
@@ -216,6 +231,8 @@ function Index() {
                         id="recruiterName"
                         label="Recruiter name"
                         icon={<User className="h-3.5 w-3.5" />}
+                        speakText="The full name the recruiter used to contact you. We use it to check if it matches their email and the company they claim to represent."
+                        speakKey="field:recruiterName"
                       >
                         <Input
                           id="recruiterName"
@@ -229,6 +246,8 @@ function Index() {
                         label="Recruiter email"
                         icon={<Mail className="h-3.5 w-3.5" />}
                         required
+                        speakText="The email address the recruiter contacted you from. We check the domain, its registration history, mail infrastructure, and reputation."
+                        speakKey="field:recruiterEmail"
                       >
                         <Input
                           id="recruiterEmail"
@@ -239,6 +258,7 @@ function Index() {
                         />
                       </Field>
                     </div>
+
                   </FormSection>
 
                   <Separator className="bg-border/60" />
@@ -254,6 +274,8 @@ function Index() {
                         id="companyName"
                         label="Company name"
                         icon={<Building2 className="h-3.5 w-3.5" />}
+                        speakText="The company the recruiter says they work for. We compare it against their email domain and website to spot mismatches."
+                        speakKey="field:companyName"
                       >
                         <Input
                           id="companyName"
@@ -266,6 +288,8 @@ function Index() {
                         id="companyDomain"
                         label="Company website"
                         icon={<Globe className="h-3.5 w-3.5" />}
+                        speakText="The website of the company they mention. We check its history, certificate record, and whether Google Safe Browsing has flagged it."
+                        speakKey="field:companyDomain"
                       >
                         <Input
                           id="companyDomain"
@@ -275,6 +299,7 @@ function Index() {
                         />
                       </Field>
                     </div>
+
                   </FormSection>
 
                   <Separator className="bg-border/60" />
@@ -289,6 +314,8 @@ function Index() {
                       id="message"
                       label="The message they sent"
                       icon={<FileText className="h-3.5 w-3.5" />}
+                      speakText="Paste the recruiter's full message, DM, or job offer here. We scan it for common scam wording, urgency, and red-flag patterns."
+                      speakKey="field:message"
                     >
                       <Textarea
                         id="message"
@@ -304,6 +331,9 @@ function Index() {
                       label="Email headers"
                       icon={<FileText className="h-3.5 w-3.5" />}
                       hint="Optional · Paste the raw email headers if you have them — improves accuracy."
+                      speakText="The raw technical headers of the email. They reveal who actually sent it, regardless of what the From line says. Tap the question mark to learn how to find them in Gmail."
+                      speakKey="field:headers"
+                      trailingAction={<HeadersHelpDialog />}
                     >
                       <Textarea
                         id="headers"
@@ -313,6 +343,7 @@ function Index() {
                         onChange={update("headers")}
                       />
                     </Field>
+
                   </FormSection>
 
                   {error && (
@@ -352,64 +383,76 @@ function Index() {
               </form>
             </Card>
           </div>
-
-          {/* Results column */}
-          <aside className="space-y-6 lg:sticky lg:top-20 lg:self-start">
-            {/* Risk summary */}
-            <Card className="overflow-hidden border-border/60 bg-card/85 shadow-[var(--shadow-elegant)] backdrop-blur">
-              <div
-                className="h-1 w-full"
-                style={{ background: "var(--gradient-primary)" }}
-                aria-hidden
-              />
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Risk score
-                  </CardTitle>
-                  <span
-                    className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
-                      result
-                        ? riskLevelClasses(result.risk_level)
-                        : "border-border/60 bg-background/60 text-muted-foreground"
-                    }`}
-                  >
-                    {loading ? "Analyzing…" : result ? result.risk_level : "Pending"}
-                  </span>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-baseline gap-2">
-                  <span
-                    className={`text-5xl font-bold tracking-tight ${
-                      result ? "text-foreground" : "text-foreground/40"
-                    }`}
-                  >
-                    {loading ? "…" : result ? result.risk_score : "—"}
-                  </span>
-                  <span className="text-sm text-muted-foreground">/ 100</span>
-                </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full bg-primary transition-all duration-500"
-                    style={{ width: `${result ? result.risk_score : 0}%` }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Low</span>
-                  <span>Medium</span>
-                  <span>High</span>
-                  <span>Critical</span>
-                </div>
-              </CardContent>
-            </Card>
-
-          </aside>
-        </div>
+        )}
 
 
-        {/* Detailed results */}
-        <section aria-labelledby="results-heading" className="mt-12 space-y-5">
+        {stage === "results" && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="flex items-center justify-between gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={resetToInput}
+              className="gap-2"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Check another recruiter
+            </Button>
+            <span className="text-xs text-muted-foreground">Analysis results</span>
+          </div>
+
+          {/* Risk summary */}
+          <Card className="overflow-hidden border-border/60 bg-card/85 shadow-[var(--shadow-elegant)] backdrop-blur">
+            <div
+              className="h-1 w-full"
+              style={{ background: "var(--gradient-primary)" }}
+              aria-hidden
+            />
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Risk score
+                </CardTitle>
+                <span
+                  className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                    result
+                      ? riskLevelClasses(result.risk_level)
+                      : "border-border/60 bg-background/60 text-muted-foreground"
+                  }`}
+                >
+                  {loading ? "Analyzing…" : result ? result.risk_level : "Pending"}
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-baseline gap-2">
+                <span
+                  className={`text-5xl font-bold tracking-tight ${
+                    result ? "text-foreground" : "text-foreground/40"
+                  }`}
+                >
+                  {loading ? "…" : result ? result.risk_score : "—"}
+                </span>
+                <span className="text-sm text-muted-foreground">/ 100</span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full bg-primary transition-all duration-500"
+                  style={{ width: `${result ? result.risk_score : 0}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Low</span>
+                <span>Medium</span>
+                <span>High</span>
+                <span>Critical</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Detailed results */}
+          <section aria-labelledby="results-heading" className="mt-4 space-y-5">
           <div className="flex items-end justify-between gap-4">
             <div>
               <h2
@@ -645,7 +688,9 @@ function Index() {
           >
             {result && <WaybackCardBody wayback={result.wayback} />}
           </ResultCard>
-        </section>
+          </section>
+        </div>
+        )}
 
         <footer className="mt-16 border-t border-border/60 pt-8 pb-6 text-center text-sm text-muted-foreground">
           <p className="font-medium">Suscruit</p>
@@ -654,7 +699,11 @@ function Index() {
       </main>
 
       {/* Floating accessibility audio assistant */}
-      <FloatingAudioAssistant summary={result?.audio_summary} />
+      <FloatingAudioAssistant
+        summary={result?.audio_summary}
+        introScript={introScript}
+        autoPlayIntro={stage === "input" && !result}
+      />
     </div>
   );
 }
@@ -694,6 +743,9 @@ function Field({
   icon,
   hint,
   required,
+  speakText,
+  speakKey,
+  trailingAction,
   children,
 }: {
   id: string;
@@ -701,23 +753,35 @@ function Field({
   icon?: React.ReactNode;
   hint?: string;
   required?: boolean;
+  speakText?: string;
+  speakKey?: string;
+  trailingAction?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-2">
-      <Label
-        htmlFor={id}
-        className="flex items-center gap-1.5 text-sm font-medium text-foreground"
-      >
-        {icon && <span className="text-primary/80">{icon}</span>}
-        {label}
-        {required && <span className="text-primary">*</span>}
-      </Label>
+      <div className="flex items-center justify-between gap-2">
+        <Label
+          htmlFor={id}
+          className="flex items-center gap-1.5 text-sm font-medium text-foreground"
+        >
+          {icon && <span className="text-primary/80">{icon}</span>}
+          {label}
+          {required && <span className="text-primary">*</span>}
+        </Label>
+        <div className="flex items-center gap-0.5">
+          {speakText && speakKey && (
+            <SpeakButton text={speakText} trackKey={speakKey} />
+          )}
+          {trailingAction}
+        </div>
+      </div>
       {children}
       {hint && <p className="text-xs leading-relaxed text-muted-foreground">{hint}</p>}
     </div>
   );
 }
+
 
 
 function ResultCard({
