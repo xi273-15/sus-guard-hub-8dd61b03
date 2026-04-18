@@ -17,6 +17,17 @@ export type WhyPoint = {
   severity: "good" | "info" | "caution" | "bad";
 };
 
+export type OsintLink = {
+  title: string;
+  url: string;
+};
+
+export type OsintResult = {
+  summary: string;
+  findings: string[];
+  links: OsintLink[];
+};
+
 export type AnalysisResult = {
   risk_score: number;
   risk_level: RiskLevel;
@@ -25,6 +36,9 @@ export type AnalysisResult = {
   why_points: WhyPoint[];
   next_steps: string[];
   audio_summary: string;
+  osint_summary: string;
+  osint_findings: string[];
+  osint_links: OsintLink[];
 };
 
 type SignalKind = "scam" | "caution" | "positive";
