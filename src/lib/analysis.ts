@@ -2342,6 +2342,18 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         baseFindings.push(safeBrowsing.safe_browsing_summary);
       }
       if (safeBrowsingLookup.nextStep) baseSteps.push(safeBrowsingLookup.nextStep);
+      if (ctLookup.scoreDelta > 0) {
+        noMsgScore = Math.min(95, noMsgScore + ctLookup.scoreDelta);
+      } else if (ctLookup.scoreDelta < 0) {
+        noMsgScore = Math.max(0, noMsgScore + ctLookup.scoreDelta);
+      }
+      if (ctLookup.floor > 0) noMsgScore = Math.max(noMsgScore, ctLookup.floor);
+      if (ct.available && ct.certificatesFound) {
+        baseFindings.push(`CT for ${ct.domain}: ${ct.summary}`);
+      } else if (ct.available && !ct.certificatesFound) {
+        baseFindings.push(`No CT certificates found for ${ct.domain}`);
+      }
+      if (ctLookup.nextStep) baseSteps.push(ctLookup.nextStep);
 
       const noMsgLevel = levelFor(noMsgScore);
 
@@ -2361,6 +2373,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (rdapLookup.whyPoint) noMsgWhyPoints.push(rdapLookup.whyPoint);
       if (dnsLookup.whyPoint) noMsgWhyPoints.push(dnsLookup.whyPoint);
       if (safeBrowsingLookup.whyPoint) noMsgWhyPoints.push(safeBrowsingLookup.whyPoint);
+      if (ctLookup.whyPoint) noMsgWhyPoints.push(ctLookup.whyPoint);
 
       return {
         risk_score: noMsgScore,
@@ -2422,6 +2435,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     score += rdapLookup.scoreDelta;
     score += dnsLookup.scoreDelta;
     score += safeBrowsingLookup.scoreDelta;
+    score += ctLookup.scoreDelta;
 
     // Cap how much positive wording can lower the score. Strong red flags
     // (high-weight scam signals or domain mismatch/lookalike/public_email)
@@ -2457,6 +2471,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     }
     if (safeBrowsingLookup.floor > 0) {
       score = Math.max(score, safeBrowsingLookup.floor);
+    }
+    if (ctLookup.floor > 0) {
+      score = Math.max(score, ctLookup.floor);
     }
     score = Math.max(0, Math.min(100, Math.round(score)));
     const level = levelFor(score);
