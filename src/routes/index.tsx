@@ -672,7 +672,9 @@ function Index() {
           >
             {result && <WaybackCardBody wayback={result.wayback} />}
           </ResultCard>
-        </section>
+          </section>
+        </div>
+        )}
 
         <footer className="mt-16 border-t border-border/60 pt-8 pb-6 text-center text-sm text-muted-foreground">
           <p className="font-medium">Suscruit</p>
@@ -681,7 +683,11 @@ function Index() {
       </main>
 
       {/* Floating accessibility audio assistant */}
-      <FloatingAudioAssistant summary={result?.audio_summary} />
+      <FloatingAudioAssistant
+        summary={result?.audio_summary}
+        introScript={introScript}
+        autoPlayIntro={stage === "input" && !result}
+      />
     </div>
   );
 }
