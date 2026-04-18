@@ -45,6 +45,25 @@ export type RdapResult = {
   error?: string;
 };
 
+export type DnsHealth = "healthy" | "thin" | "minimal" | "missing" | "skipped" | "unknown";
+
+export type DnsResult = {
+  available: boolean;
+  domain: string | null;
+  hasMx: boolean;
+  hasSpf: boolean;
+  hasDmarc: boolean;
+  hasA: boolean;
+  hasAaaa: boolean;
+  mxRecords: string[];
+  spfRecord: string | null;
+  dmarcRecord: string | null;
+  health: DnsHealth;
+  summary: string;
+  interpretation: string;
+  error?: string;
+};
+
 export type AnalysisResult = {
   risk_score: number;
   risk_level: RiskLevel;
