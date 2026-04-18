@@ -1240,6 +1240,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         noMsgWhyPoints.push({ finding: domainCheck.finding, why: domainCheck.reason, severity: sev });
       }
       headerAuth.explanations.forEach((e) => noMsgWhyPoints.push(e));
+      osint.whyPoints.forEach((p) => noMsgWhyPoints.push(p));
 
       return {
         risk_score: noMsgScore,
@@ -1253,6 +1254,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         audio_summary: noMsgNegative
           ? `${domainCheck.finding} Paste the recruiter's full message to get a complete risk assessment.`
           : "No message was provided. Paste the recruiter's full message to get a real risk assessment.",
+        osint_summary: osint.result.summary,
+        osint_findings: osint.result.findings,
+        osint_links: osint.result.links,
       };
     }
 
