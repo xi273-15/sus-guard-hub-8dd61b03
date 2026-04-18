@@ -723,6 +723,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
           findings: [],
           reasons: [],
           nextSteps: [],
+          explanations: [],
           scoreDelta: 0,
           floor: 0,
         };
@@ -741,6 +742,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         findings: [],
         reasons: [],
         nextSteps: [],
+        explanations: [],
         scoreDelta: 0,
         floor: 0,
       };
