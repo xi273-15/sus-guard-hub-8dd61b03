@@ -76,6 +76,7 @@ export type AnalysisResult = {
   osint_findings: string[];
   osint_links: OsintLink[];
   rdap: RdapResult;
+  dns: DnsResult;
 };
 
 type SignalKind = "scam" | "caution" | "positive";
