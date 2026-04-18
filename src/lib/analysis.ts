@@ -3385,6 +3385,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (ctLookup.whyPoint) noMsgWhyPoints.push(ctLookup.whyPoint);
       if (waybackLookup.whyPoint) noMsgWhyPoints.push(waybackLookup.whyPoint);
       if (recruiterLocationLookup.whyPoint) noMsgWhyPoints.push(recruiterLocationLookup.whyPoint);
+      if (websiteTrafficLookup.whyPoint) noMsgWhyPoints.push(websiteTrafficLookup.whyPoint);
 
       return {
         risk_score: noMsgScore,
@@ -3407,6 +3408,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         ct,
         wayback,
         recruiter_location: recruiterLocation,
+        website_traffic: websiteTraffic,
       };
     }
 
@@ -3762,5 +3764,6 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       ct,
       wayback,
       recruiter_location: recruiterLocation,
+      website_traffic: websiteTraffic,
     };
   });
