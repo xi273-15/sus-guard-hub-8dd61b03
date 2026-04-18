@@ -1,53 +1,55 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Play,
-  Pause,
-  Loader2,
-  ChevronRight,
-  ChevronLeft,
-  Accessibility,
-  X,
-} from "lucide-react";
+import { Play, Pause, Loader2, Accessibility } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Status = "idle" | "loading" | "playing" | "paused";
 
-function splitIntoChunks(text: string): string[] {
+type Line = { text: string; words: string[] };
+
+function splitIntoLines(text: string): Line[] {
   if (!text) return [];
-  // Split on sentence boundaries while keeping things readable.
-  const parts = text
+  const sentences = text
     .replace(/\s+/g, " ")
     .split(/(?<=[.!?])\s+(?=[A-Z0-9"“'])/g)
     .map((s) => s.trim())
     .filter(Boolean);
-  return parts.length ? parts : [text.trim()];
+
+  // Further break long sentences into ~8-word lines for subtitle feel
+  const lines: Line[] = [];
+  for (const s of sentences) {
+    const words = s.split(/\s+/);
+    const chunkSize = 8;
+    if (words.length <= chunkSize + 2) {
+      lines.push({ text: s, words });
+    } else {
+      for (let i = 0; i < words.length; i += chunkSize) {
+        const slice = words.slice(i, i + chunkSize);
+        lines.push({ text: slice.join(" "), words: slice });
+      }
+    }
+  }
+  return lines.length ? lines : [{ text: text.trim(), words: text.trim().split(/\s+/) }];
 }
 
 export function FloatingAudioAssistant({ summary }: { summary?: string }) {
   const [status, setStatus] = useState<Status>("idle");
-  const [open, setOpen] = useState(false);
-  const [activeChunk, setActiveChunk] = useState(0);
+  const [activeLine, setActiveLine] = useState(0);
+  const [activeWord, setActiveWord] = useState(0);
   const [duration, setDuration] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const intervalRef = useRef<number | null>(null);
-  const activeChunkRef = useRef<HTMLLIElement | null>(null);
+  const rafRef = useRef<number | null>(null);
 
-  const chunks = useMemo(() => splitIntoChunks(summary || ""), [summary]);
-  const hasContent = chunks.length > 0;
+  const lines = useMemo(() => splitIntoLines(summary || ""), [summary]);
+  const totalWords = useMemo(() => lines.reduce((acc, l) => acc + l.words.length, 0), [lines]);
+  const hasContent = lines.length > 0;
 
   // Reset when the analysis (summary) changes
   useEffect(() => {
     stopAudio();
-    setActiveChunk(0);
+    setActiveLine(0);
+    setActiveWord(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [summary]);
-
-  // Auto-scroll active chunk into view inside the panel
-  useEffect(() => {
-    if (open && activeChunkRef.current) {
-      activeChunkRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }
-  }, [activeChunk, open]);
 
   useEffect(() => {
     return () => {
@@ -56,20 +58,33 @@ export function FloatingAudioAssistant({ summary }: { summary?: string }) {
   }, []);
 
   function clearTracker() {
-    if (intervalRef.current !== null) {
-      window.clearInterval(intervalRef.current);
-      intervalRef.current = null;
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     }
   }
 
   function startTracker(audio: HTMLAudioElement, total: number) {
     clearTracker();
-    if (chunks.length <= 1 || !total || !isFinite(total)) return;
-    intervalRef.current = window.setInterval(() => {
-      const ratio = audio.currentTime / total;
-      const idx = Math.min(chunks.length - 1, Math.floor(ratio * chunks.length));
-      setActiveChunk(idx);
-    }, 200);
+    if (!total || !isFinite(total) || totalWords === 0) return;
+
+    const tick = () => {
+      const ratio = Math.min(1, Math.max(0, audio.currentTime / total));
+      const wordIdx = Math.min(totalWords - 1, Math.floor(ratio * totalWords));
+      // Find which line this word lives in
+      let cumulative = 0;
+      for (let i = 0; i < lines.length; i++) {
+        const len = lines[i].words.length;
+        if (wordIdx < cumulative + len) {
+          setActiveLine(i);
+          setActiveWord(wordIdx - cumulative);
+          break;
+        }
+        cumulative += len;
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
   }
 
   function stopAudio() {
@@ -97,7 +112,6 @@ export function FloatingAudioAssistant({ summary }: { summary?: string }) {
       return;
     }
 
-    // idle -> generate & play
     if (!summary) return;
     try {
       setStatus("loading");
@@ -120,7 +134,8 @@ export function FloatingAudioAssistant({ summary }: { summary?: string }) {
         URL.revokeObjectURL(url);
         clearTracker();
         setStatus("idle");
-        setActiveChunk(0);
+        setActiveLine(0);
+        setActiveWord(0);
       };
       audio.onerror = () => {
         URL.revokeObjectURL(url);
@@ -144,91 +159,61 @@ export function FloatingAudioAssistant({ summary }: { summary?: string }) {
           ? "Resume spoken summary"
           : "Play spoken summary of analysis";
 
+  const showSubtitle = hasContent && (status === "playing" || status === "paused");
+  const currentLine = lines[activeLine];
+
   return (
     <div
-      className="fixed bottom-4 right-4 z-50 flex items-end gap-2 sm:bottom-6 sm:right-6"
+      className="fixed bottom-4 right-4 z-50 flex items-center gap-2 sm:bottom-6 sm:right-6"
       role="region"
       aria-label="Accessibility audio assistant"
     >
-      {/* Transcript panel */}
+      {/* Subtitle strip */}
       <div
-        id="audio-transcript-panel"
+        aria-live="polite"
+        aria-atomic="true"
         className={cn(
-          "pointer-events-auto origin-bottom-right overflow-hidden rounded-2xl border border-border/60 bg-card/95 shadow-[var(--shadow-elegant)] backdrop-blur-xl transition-all duration-300 ease-out",
-          open
-            ? "mb-0 w-[min(20rem,calc(100vw-7rem))] sm:w-80 opacity-100 translate-x-0"
-            : "pointer-events-none w-0 opacity-0 translate-x-4",
+          "pointer-events-none max-w-[min(22rem,calc(100vw-6rem))] origin-right transition-all duration-300 ease-out",
+          showSubtitle
+            ? "translate-x-0 opacity-100 scale-100"
+            : "translate-x-3 opacity-0 scale-95",
         )}
-        aria-hidden={!open}
       >
-        <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <span
-              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-primary"
-              style={{ backgroundColor: "color-mix(in oklab, var(--primary) 14%, transparent)" }}
-            >
-              <Accessibility className="h-3.5 w-3.5" />
-            </span>
-            <div className="min-w-0">
-              <p className="truncate text-xs font-semibold leading-tight">Spoken summary</p>
-              <p className="truncate text-[10px] text-muted-foreground">
-                Accessibility · ElevenLabs
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setOpen(false)}
-            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            aria-label="Close transcript panel"
+        {showSubtitle && currentLine && (
+          <div
+            className="rounded-full border border-border/60 bg-card/90 px-3 py-1.5 text-xs leading-snug shadow-[var(--shadow-elegant)] backdrop-blur-xl sm:text-sm"
+            key={activeLine}
           >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-        <div className="max-h-[55vh] overflow-y-auto px-3 py-3 sm:max-h-80">
-          {hasContent ? (
-            <ol className="space-y-2">
-              {chunks.map((c, i) => {
-                const isActive = i === activeChunk && status === "playing";
+            <p className="m-0 whitespace-normal">
+              {currentLine.words.map((w, i) => {
+                const isActive = i === activeWord && status === "playing";
+                const isPast = i < activeWord;
                 return (
-                  <li
+                  <span
                     key={i}
-                    ref={isActive ? activeChunkRef : null}
                     className={cn(
-                      "rounded-md px-2 py-1.5 text-xs leading-relaxed transition-colors",
+                      "transition-colors duration-150",
                       isActive
-                        ? "bg-primary/15 text-foreground ring-1 ring-primary/40"
-                        : i < activeChunk && status !== "idle"
-                          ? "text-muted-foreground/70"
+                        ? "font-semibold text-foreground"
+                        : isPast
+                          ? "text-muted-foreground/80"
                           : "text-muted-foreground",
                     )}
                   >
-                    {c}
-                  </li>
+                    {i > 0 ? " " : ""}
+                    {w}
+                  </span>
                 );
               })}
-            </ol>
-          ) : (
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              Run an analysis to hear and read the spoken summary.
             </p>
-          )}
-        </div>
+          </div>
+        )}
+        {hasContent && status === "idle" && (
+          <div className="sr-only">Spoken summary ready. Press play to listen.</div>
+        )}
       </div>
 
-      {/* Chevron toggle attached to the circle */}
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        aria-controls="audio-transcript-panel"
-        aria-label={open ? "Collapse transcript" : "Expand transcript"}
-        className="pointer-events-auto inline-flex h-8 w-5 items-center justify-center rounded-l-md border border-r-0 border-border/60 bg-card/90 text-muted-foreground shadow-sm backdrop-blur transition-colors hover:bg-muted hover:text-foreground"
-      >
-        {open ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
-      </button>
-
-      {/* Main circular button */}
+      {/* Floating orb */}
       <button
         type="button"
         onClick={handleClick}
@@ -240,21 +225,85 @@ export function FloatingAudioAssistant({ summary }: { summary?: string }) {
         )}
         style={{ background: "var(--gradient-primary)" }}
       >
-        {/* pulse ring while playing */}
-        {status === "playing" && (
+        {/* Idle soft glow */}
+        {status === "idle" && hasContent && (
           <span
             aria-hidden
-            className="absolute inset-0 animate-ping rounded-full"
-            style={{ background: "color-mix(in oklab, var(--primary) 35%, transparent)" }}
+            className="absolute inset-0 rounded-full animate-pulse-glow"
+            style={{
+              boxShadow: "0 0 24px color-mix(in oklab, var(--primary) 45%, transparent)",
+            }}
           />
         )}
+
+        {/* Playing — multi-ring waveform-like ripple */}
+        {status === "playing" && (
+          <>
+            <span
+              aria-hidden
+              className="absolute inset-0 rounded-full animate-ping"
+              style={{
+                background: "color-mix(in oklab, var(--primary) 30%, transparent)",
+                animationDuration: "1.6s",
+              }}
+            />
+            <span
+              aria-hidden
+              className="absolute -inset-1 rounded-full animate-ping"
+              style={{
+                background: "color-mix(in oklab, var(--cyber) 22%, transparent)",
+                animationDuration: "2.2s",
+                animationDelay: "0.3s",
+              }}
+            />
+            <span
+              aria-hidden
+              className="absolute -inset-2 rounded-full opacity-70"
+              style={{
+                background:
+                  "conic-gradient(from 0deg, color-mix(in oklab, var(--primary) 60%, transparent), transparent 60%, color-mix(in oklab, var(--cyber) 50%, transparent), transparent)",
+                animation: "spin 3.5s linear infinite",
+                filter: "blur(6px)",
+              }}
+            />
+          </>
+        )}
+
+        {/* Paused — gentle steady ring */}
+        {status === "paused" && (
+          <span
+            aria-hidden
+            className="absolute inset-0 rounded-full"
+            style={{
+              boxShadow: "0 0 18px color-mix(in oklab, var(--primary) 35%, transparent)",
+            }}
+          />
+        )}
+
+        {/* Loading — rotating gradient ring */}
+        {status === "loading" && (
+          <span
+            aria-hidden
+            className="absolute -inset-1 rounded-full"
+            style={{
+              background:
+                "conic-gradient(from 0deg, var(--primary), transparent 50%, var(--cyber), transparent)",
+              animation: "spin 1.2s linear infinite",
+              filter: "blur(2px)",
+              opacity: 0.85,
+            }}
+          />
+        )}
+
         <span className="relative flex items-center justify-center">
           {status === "loading" ? (
             <Loader2 className="h-6 w-6 animate-spin" />
           ) : status === "playing" ? (
             <Pause className="h-6 w-6 fill-current" />
-          ) : (
+          ) : hasContent ? (
             <Play className="h-6 w-6 fill-current" />
+          ) : (
+            <Accessibility className="h-6 w-6" />
           )}
         </span>
       </button>
