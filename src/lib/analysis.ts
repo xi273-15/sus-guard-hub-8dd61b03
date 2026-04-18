@@ -1807,7 +1807,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         domainCheck.scoreDelta > 0 ||
         authDelta > 0 ||
         osint.scoreDelta > 0 ||
-        rdapLookup.scoreDelta > 0
+        rdapLookup.scoreDelta > 0 ||
+        dnsLookup.scoreDelta > 0
       ) {
         noMsgScore = Math.min(
           85,
@@ -1815,20 +1816,27 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
             domainCheck.scoreDelta +
             authDelta +
             Math.max(0, osint.scoreDelta) +
-            Math.max(0, rdapLookup.scoreDelta),
+            Math.max(0, rdapLookup.scoreDelta) +
+            Math.max(0, dnsLookup.scoreDelta),
         );
       }
       if (osint.scoreDelta < 0) noMsgScore = Math.max(0, noMsgScore + osint.scoreDelta);
       if (rdapLookup.scoreDelta < 0) noMsgScore = Math.max(0, noMsgScore + rdapLookup.scoreDelta);
+      if (dnsLookup.scoreDelta < 0) noMsgScore = Math.max(0, noMsgScore + dnsLookup.scoreDelta);
       if (domainCheck.floor > 0) noMsgScore = Math.max(noMsgScore, domainCheck.floor);
       if (authFloor > 0) noMsgScore = Math.max(noMsgScore, authFloor);
       if (rdapLookup.floor > 0) noMsgScore = Math.max(noMsgScore, rdapLookup.floor);
+      if (dnsLookup.floor > 0) noMsgScore = Math.max(noMsgScore, dnsLookup.floor);
       osint.result.findings.forEach((f) => baseFindings.push(f));
       osint.nextSteps.forEach((s) => baseSteps.push(s));
       if (rdap.available) {
         baseFindings.push(`Domain ${rdap.domain}: ${rdap.ageSummary}`);
       }
       if (rdapLookup.nextStep) baseSteps.push(rdapLookup.nextStep);
+      if (dns.available) {
+        baseFindings.push(`DNS for ${dns.domain}: ${dns.summary}`);
+      }
+      if (dnsLookup.nextStep) baseSteps.push(dnsLookup.nextStep);
 
       const noMsgLevel = levelFor(noMsgScore);
 
