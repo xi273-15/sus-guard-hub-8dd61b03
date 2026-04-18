@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Play, Pause, Loader2, MessageCircle, Accessibility } from "lucide-react";
+import { Play, Pause, Loader2, MessageCircle, Accessibility, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTtsPlayer } from "@/hooks/use-tts-player";
 
