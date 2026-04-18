@@ -720,7 +720,11 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         };
       }
 
-      const lower = raw.toLowerCase();
+      // Normalize: unfold continuation lines (RFC 5322 — lines starting with space/tab
+      // belong to the previous header). This is critical for Outlook/Gmail/Yahoo/Apple
+      // which wrap long Authentication-Results across many lines.
+      const unfolded = raw.replace(/\r?\n[ \t]+/g, " ");
+      const lower = unfolded.toLowerCase();
 
       const result: HeaderAuthCheck = {
         spf: "unknown",
@@ -733,24 +737,54 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         floor: 0,
       };
 
-      // SPF — does this email actually come from the company it claims?
-      if (/\bspf\s*=\s*pass\b/.test(lower) || /\bspf:\s*pass\b/.test(lower)) {
+      // Helper: detect a status for a given mechanism across many provider formats.
+      // Matches:
+      //   Authentication-Results: ... spf=pass ...           (Gmail, Outlook, Yahoo, Apple)
+      //   ARC-Authentication-Results: i=1; ... spf=pass ...  (Gmail forwarders)
+      //   Received-SPF: Pass (...)                           (Outlook/Exchange, Yahoo)
+      //   X-MS-Exchange-Organization-SCL / compauth=fail     (Outlook)
+      //   DKIM-Signature: v=1; a=...                         (presence only — not a pass)
+      const statusFor = (mech: "spf" | "dkim" | "dmarc"): string | null => {
+        // key=value form, e.g. spf=pass, dkim=fail, dmarc=bestguesspass
+        const kv = new RegExp(`\\b${mech}\\s*[=:]\\s*([a-z]+)`, "i");
+        const m = lower.match(kv);
+        if (m) return m[1];
+        return null;
+      };
+
+      // SPF — also fall back to "Received-SPF: <status>"
+      let spfStatus = statusFor("spf");
+      if (!spfStatus) {
+        const rspf = lower.match(/received-spf:\s*([a-z]+)/);
+        if (rspf) spfStatus = rspf[1];
+      }
+
+      // DMARC — accept "bestguesspass" as pass-ish, "permerror"/"temperror" as unknown
+      let dmarcStatus = statusFor("dmarc");
+      // DKIM — also infer "none" if no DKIM-Signature header AND no dkim= result
+      let dkimStatus = statusFor("dkim");
+      if (!dkimStatus && !/\bdkim-signature\s*:/.test(lower)) {
+        dkimStatus = "none";
+      }
+
+      // SPF
+      if (spfStatus === "pass") {
         result.spf = "pass";
-      } else if (/\bspf\s*=\s*softfail\b/.test(lower)) {
+      } else if (spfStatus === "softfail" || spfStatus === "neutral") {
         result.spf = "softfail";
         result.findings.push("The email's sender check (SPF) only partially passed — the company didn't fully confirm this email came from them.");
         result.reasons.push("Think of SPF like a guest list at the door. A 'softfail' means the sender's name isn't clearly on the company's approved list, so the email might not really be from who it says it is.");
         result.nextSteps.push("Ask the recruiter to resend the message from their official company email address.");
         result.scoreDelta += 10;
         result.floor = Math.max(result.floor, 15);
-      } else if (/\bspf\s*=\s*fail\b/.test(lower) || /\bspf:\s*fail\b/.test(lower)) {
+      } else if (spfStatus === "fail" || spfStatus === "hardfail") {
         result.spf = "fail";
         result.findings.push("The email failed the sender check (SPF) — the company says this email did NOT come from their servers.");
         result.reasons.push("This is like someone showing up claiming to be from a company, but that company's official 'guest list' says they never sent them. It's a strong sign the sender is faking their identity.");
         result.nextSteps.push("Don't trust this sender. Go to the company's real website and contact them directly to check.");
         result.scoreDelta += 18;
         result.floor = Math.max(result.floor, 25);
-      } else if (/\bspf\s*=\s*none\b/.test(lower)) {
+      } else if (spfStatus === "none") {
         result.spf = "none";
         result.findings.push("No sender check (SPF) was found in the email — there's no proof of where it really came from.");
         result.reasons.push("Legitimate companies usually set up SPF so you can confirm their emails are real. Without it, it's much easier for a scammer to pretend to be them.");
@@ -758,17 +792,17 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         result.scoreDelta += 6;
       }
 
-      // DKIM — was the email tampered with on the way to you?
-      if (/\bdkim\s*=\s*pass\b/.test(lower) || /\bdkim:\s*pass\b/.test(lower)) {
+      // DKIM
+      if (dkimStatus === "pass") {
         result.dkim = "pass";
-      } else if (/\bdkim\s*=\s*fail\b/.test(lower) || /\bdkim:\s*fail\b/.test(lower)) {
+      } else if (dkimStatus === "fail" || dkimStatus === "permerror") {
         result.dkim = "fail";
         result.findings.push("The email's digital signature (DKIM) failed — the message may have been faked or changed.");
         result.reasons.push("Real companies put a digital 'wax seal' on their emails. If the seal is broken or doesn't match, the email was either tampered with or wasn't really sent by that company.");
         result.nextSteps.push("Treat this email as suspicious and contact the company through their official website to confirm.");
         result.scoreDelta += 16;
         result.floor = Math.max(result.floor, 25);
-      } else if (/\bdkim\s*=\s*none\b/.test(lower)) {
+      } else if (dkimStatus === "none") {
         result.dkim = "none";
         result.findings.push("The email has no digital signature (DKIM) — there's no way to confirm it wasn't tampered with.");
         result.reasons.push("Without that 'wax seal,' you can't be sure the email is genuine or that no one changed it before it reached you.");
@@ -776,22 +810,52 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         result.scoreDelta += 6;
       }
 
-      // DMARC — does the company itself vouch for this email?
-      if (/\bdmarc\s*=\s*pass\b/.test(lower) || /\bdmarc:\s*pass\b/.test(lower)) {
+      // DMARC
+      if (dmarcStatus === "pass" || dmarcStatus === "bestguesspass") {
         result.dmarc = "pass";
-      } else if (/\bdmarc\s*=\s*fail\b/.test(lower) || /\bdmarc:\s*fail\b/.test(lower)) {
+      } else if (dmarcStatus === "fail") {
         result.dmarc = "fail";
         result.findings.push("The email failed the company's anti-impersonation check (DMARC) — a strong warning sign of a fake or spoofed email.");
         result.reasons.push("DMARC is the company's own rule that says 'only real emails from us should pass.' When it fails, it usually means someone is trying to impersonate the company to trick you.");
         result.nextSteps.push("Do not trust this sender. Go to the company's official careers page and contact them directly instead.");
         result.scoreDelta += 22;
         result.floor = Math.max(result.floor, 35);
-      } else if (/\bdmarc\s*=\s*none\b/.test(lower)) {
+      } else if (dmarcStatus === "none") {
         result.dmarc = "none";
         result.findings.push("The company doesn't have anti-impersonation protection (DMARC) set up for this email — making it easier for scammers to fake.");
         result.reasons.push("Without DMARC, scammers can more easily send emails that look like they're from this company. You can't rely on the sender's name alone.");
         result.nextSteps.push("Be careful and double-check the recruiter through a separate, trusted channel — not by replying to this email.");
         result.scoreDelta += 8;
+      }
+
+      // Outlook-specific: compauth (composite authentication). reason codes 000/001 = fail.
+      const compauth = lower.match(/compauth=([a-z]+)(?:\s+reason=(\d+))?/);
+      if (compauth) {
+        const verdict = compauth[1];
+        if (verdict === "fail") {
+          result.findings.push("Outlook's overall trust check (compauth) failed — Microsoft's own systems flagged this email as likely impersonation.");
+          result.reasons.push("Outlook combines all the sender checks into one final verdict. A 'fail' here means Microsoft itself doesn't believe this email really came from who it claims.");
+          result.nextSteps.push("Do not reply or click any links. Verify the recruiter through the company's official website.");
+          result.scoreDelta += 15;
+          result.floor = Math.max(result.floor, 30);
+        } else if (verdict === "softpass" || verdict === "none") {
+          result.findings.push("Outlook couldn't fully confirm the sender's identity (compauth was not a clear pass).");
+          result.reasons.push("Microsoft wasn't able to fully verify this email. It's not an automatic red flag, but you shouldn't trust it on looks alone.");
+          result.scoreDelta += 5;
+        }
+      }
+
+      // If we still know absolutely nothing, surface that so the user knows the
+      // headers were received but unreadable (e.g. they pasted only the body).
+      if (
+        result.spf === "unknown" &&
+        result.dkim === "unknown" &&
+        result.dmarc === "unknown"
+      ) {
+        result.findings.push("We couldn't find sender authentication info (SPF, DKIM, or DMARC) in the headers you pasted.");
+        result.reasons.push("Most real emails from Gmail, Outlook, Yahoo, or Apple Mail include an 'Authentication-Results' line that proves where the email came from. If it's missing, you may have pasted only part of the headers — or the email skipped these checks, which is unusual for legitimate companies.");
+        result.nextSteps.push("In your email app, open the message and choose 'Show original' (Gmail), 'View message source' (Outlook/Yahoo), or 'View → Message → All Headers' (Apple Mail), then paste the full headers.");
+        result.scoreDelta += 4;
       }
 
       return result;
