@@ -1736,6 +1736,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (headerAuth.floor > 0) {
       score = Math.max(score, headerAuth.floor);
     }
+    if (rdapLookup.floor > 0) {
+      score = Math.max(score, rdapLookup.floor);
+    }
     score = Math.max(0, Math.min(100, Math.round(score)));
     const level = levelFor(score);
 
