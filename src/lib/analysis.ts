@@ -1295,6 +1295,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (matchedScam.length >= 5) score += 6;
 
     score += domainCheck.scoreDelta;
+    score += osint.scoreDelta;
 
     // Cap how much positive wording can lower the score. Strong red flags
     // (high-weight scam signals or domain mismatch/lookalike/public_email)
