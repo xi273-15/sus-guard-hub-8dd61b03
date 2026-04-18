@@ -1,31 +1,33 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { SpeakButton } from "@/components/speak-button";
 import { HeadersHelpDialog } from "@/components/headers-help-dialog";
+import { RiskOverview } from "@/components/results/risk-overview";
+import { InteractiveTrio } from "@/components/results/interactive-trio";
+import { CategoryTile } from "@/components/results/category-tile";
+import { CategoryModal } from "@/components/results/category-modal";
+import { FindingSection } from "@/components/results/finding-section";
+import {
+  splitOsint,
+  emailStats,
+  companyStats,
+  recruiterStats,
+  emailVoiceText,
+  companyVoiceText,
+  recruiterVoiceText,
+} from "@/lib/categorize-findings";
 import { ArrowLeft } from "lucide-react";
 import {
   Shield,
-  ShieldAlert,
   Search,
   FileText,
   Mail,
   Building2,
   Globe,
   User,
-  AlertTriangle,
-  ListChecks,
-  Info,
   Sparkles,
   Loader2,
-  CheckCircle2,
-  Mailbox,
-  Globe2,
   ExternalLink,
-  CalendarClock,
-  Network,
-  ShieldCheck,
-  ScrollText,
-  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
