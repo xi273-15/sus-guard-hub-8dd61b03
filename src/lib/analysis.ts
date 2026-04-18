@@ -1496,6 +1496,171 @@ async function runDnsLookup(input: {
 }
 
 
+// ---------- Google Safe Browsing ----------
+function emptySafeBrowsing(
+  checkedUrl: string | null,
+  status: SafeBrowsingStatus,
+  summary: string,
+  error?: string,
+): SafeBrowsingResult {
+  return {
+    checked_url: checkedUrl,
+    safe_browsing_status: status,
+    safe_browsing_findings: [],
+    safe_browsing_summary: summary,
+    error,
+  };
+}
+
+async function runSafeBrowsing(input: {
+  companyDomain?: string;
+}): Promise<{
+  result: SafeBrowsingResult;
+  scoreDelta: number;
+  floor: number;
+  whyPoint: WhyPoint | null;
+  nextStep: string | null;
+}> {
+  const apiKey = process.env.GOOGLE_SAFE_BROWSING_API_KEY;
+  const rawDomain = input.companyDomain ? normalizeCompanyDomain(input.companyDomain) : null;
+  const checkedUrl = rawDomain ? `https://${rawDomain}` : null;
+
+  if (!checkedUrl) {
+    return {
+      result: emptySafeBrowsing(null, "unknown", "No company website provided to check."),
+      scoreDelta: 0,
+      floor: 0,
+      whyPoint: null,
+      nextStep: null,
+    };
+  }
+
+  if (!apiKey) {
+    return {
+      result: emptySafeBrowsing(
+        checkedUrl,
+        "unknown",
+        "Google Safe Browsing check is not configured, so site reputation could not be verified.",
+        "missing_api_key",
+      ),
+      scoreDelta: 0,
+      floor: 0,
+      whyPoint: null,
+      nextStep: null,
+    };
+  }
+
+  try {
+    const res = await fetch(
+      `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client: { clientId: "suscruit", clientVersion: "1.0.0" },
+          threatInfo: {
+            threatTypes: [
+              "MALWARE",
+              "SOCIAL_ENGINEERING",
+              "UNWANTED_SOFTWARE",
+              "POTENTIALLY_HARMFUL_APPLICATION",
+            ],
+            platformTypes: ["ANY_PLATFORM"],
+            threatEntryTypes: ["URL"],
+            threatEntries: [{ url: checkedUrl }],
+          },
+        }),
+      },
+    );
+
+    if (!res.ok) {
+      return {
+        result: emptySafeBrowsing(
+          checkedUrl,
+          "unknown",
+          "Google Safe Browsing did not return a result for this site, so its reputation could not be verified.",
+          `http_${res.status}`,
+        ),
+        scoreDelta: 0,
+        floor: 0,
+        whyPoint: null,
+        nextStep: null,
+      };
+    }
+
+    const json = (await res.json()) as { matches?: Array<{ threatType?: string }> };
+    const matches = Array.isArray(json.matches) ? json.matches : [];
+
+    if (matches.length > 0) {
+      const types = Array.from(
+        new Set(matches.map((m) => (m.threatType ?? "UNKNOWN").toString())),
+      );
+      const human = types
+        .map((t) =>
+          t === "MALWARE"
+            ? "malware"
+            : t === "SOCIAL_ENGINEERING"
+              ? "phishing / social engineering"
+              : t === "UNWANTED_SOFTWARE"
+                ? "unwanted software"
+                : t === "POTENTIALLY_HARMFUL_APPLICATION"
+                  ? "potentially harmful application"
+                  : t.toLowerCase(),
+        )
+        .join(", ");
+      const summary = `Google Safe Browsing currently flags ${rawDomain} for: ${human}. Google considers this site unsafe or harmful.`;
+      return {
+        result: {
+          checked_url: checkedUrl,
+          safe_browsing_status: "flagged",
+          safe_browsing_findings: types,
+          safe_browsing_summary: summary,
+        },
+        scoreDelta: 25,
+        floor: 60,
+        whyPoint: {
+          finding: `${rawDomain} is currently flagged by Google Safe Browsing (${human}).`,
+          why: "Google's Safe Browsing service maintains a list of sites known to host malware, phishing, or other harmful content. A current flag is a strong signal that this site is unsafe.",
+          severity: "bad",
+        },
+        nextStep: `Do not visit or submit any information to ${rawDomain}. Google Safe Browsing currently flags it as unsafe.`,
+      };
+    }
+
+    const summary = `Google Safe Browsing does not currently flag ${rawDomain}, but that is not proof the site is safe.`;
+    return {
+      result: {
+        checked_url: checkedUrl,
+        safe_browsing_status: "not_flagged",
+        safe_browsing_findings: [],
+        safe_browsing_summary: summary,
+      },
+      scoreDelta: -1,
+      floor: 0,
+      whyPoint: {
+        finding: `${rawDomain} is not currently on Google Safe Browsing's list of unsafe sites.`,
+        why: "Google's Safe Browsing service didn't return a hit for this site. That is mildly reassuring but not proof of safety — many scam sites are too new or too small to be listed.",
+        severity: "info",
+      },
+      nextStep: null,
+    };
+  } catch (err) {
+    return {
+      result: emptySafeBrowsing(
+        checkedUrl,
+        "unknown",
+        "Google Safe Browsing check failed, so site reputation could not be verified.",
+        err instanceof Error ? err.message : "unknown_error",
+      ),
+      scoreDelta: 0,
+      floor: 0,
+      whyPoint: null,
+      nextStep: null,
+    };
+  }
+}
+
+
 export const analyzeRecruiter = createServerFn({ method: "POST" })
   .inputValidator((input: AnalysisInput) => input)
   .handler(async ({ data }): Promise<AnalysisResult> => {
