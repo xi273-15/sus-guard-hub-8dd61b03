@@ -983,6 +983,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         audio_summary: noMsgNegative
           ? `${domainCheck.finding} Paste the recruiter's full message to get a complete risk assessment.`
           : "No message was provided. Paste the recruiter's full message to get a real risk assessment.",
+        header_explanations: headerAuth.explanations,
       };
     }
 
@@ -1068,6 +1069,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (domainIsNegative && domainCheck.finding) findings.push(domainCheck.finding);
     for (const m of matchedScam) findings.push(m.finding);
     for (const m of matchedCaution) findings.push(m.finding);
+    // Surface email-header findings into the main findings list (per-pointer
+    // explanations live in `header_explanations` for a dedicated section).
+    for (const h of headerAuth.findings) findings.push(h);
     if (matchedPositive.length) {
       const positiveSummary = `Legitimacy signals detected: ${matchedPositive
         .map((p) => p.finding.replace(/\.$/, "").replace(/^Message /, ""))
@@ -1111,9 +1115,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     } else if (domainCheck.status === "unverifiable" && (data.recruiterEmail || data.companyDomain)) {
       why_it_matters = `${why_it_matters} Note: we couldn't verify whether the sender's domain aligns with the claimed company.`;
     }
-    if (headerAuth.reasons.length) {
-      why_it_matters = `${why_it_matters} ${headerAuth.reasons.join(" ")}`;
-    }
+    // Note: header-auth reasons are NOT appended here — they're surfaced as
+    // paired finding/explanation entries in `header_explanations` so the user
+    // gets a clean per-pointer breakdown instead of a wall of text.
 
     const summaryParts: string[] = [`This recruiter check scored ${score} out of 100, which is ${level}.`];
     if (matchedScam.length) {
@@ -1149,5 +1153,6 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       why_it_matters,
       next_steps,
       audio_summary: summaryParts.join(" "),
+      header_explanations: headerAuth.explanations,
     };
   });
