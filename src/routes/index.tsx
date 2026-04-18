@@ -106,6 +106,7 @@ function Index() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [stage, setStage] = useState<"input" | "results">("input");
 
   const update = (k: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -117,9 +118,9 @@ function Index() {
     try {
       const res = await analyzeRecruiter({ data: form });
       setResult(res);
-      // Smooth scroll to results on small screens
+      setStage("results");
       requestAnimationFrame(() => {
-        document.getElementById("results-heading")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        window.scrollTo({ top: 0, behavior: "smooth" });
       });
     } catch (err) {
       console.error(err);
@@ -128,6 +129,17 @@ function Index() {
       setLoading(false);
     }
   };
+
+  const resetToInput = () => {
+    setStage("input");
+    setResult(null);
+    setError(null);
+    requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+  };
+
+  const introScript =
+    "Welcome to Suscruit. I help you check if a recruiter who contacted you might be a scam. Just fill in what you know — the recruiter's name and email, the company they claim to represent, their message, and if you have it, the raw email headers. Tap the small speaker icon next to any field to hear what it's for. When you're ready, hit Analyze and I'll walk you through what we found.";
+
 
   return (
     <div className="relative min-h-screen bg-background text-foreground">
