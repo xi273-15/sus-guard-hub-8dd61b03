@@ -931,3 +931,56 @@ function DnsCardBody({ dns }: { dns: DnsResult }) {
     </div>
   );
 }
+
+function SafeBrowsingCardBody({ safeBrowsing }: { safeBrowsing: SafeBrowsingResult }) {
+  const statusStyles: Record<SafeBrowsingResult["safe_browsing_status"], string> = {
+    flagged: "text-rose-500 border-rose-500/30 bg-rose-500/10",
+    not_flagged: "text-emerald-500 border-emerald-500/30 bg-emerald-500/10",
+    unknown: "border-border/60 bg-background/60 text-muted-foreground",
+  };
+  const statusLabel: Record<SafeBrowsingResult["safe_browsing_status"], string> = {
+    flagged: "Flagged as unsafe",
+    not_flagged: "Not currently flagged",
+    unknown: "Unknown",
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <RdapField label="Checked URL" value={safeBrowsing.checked_url ?? "—"} mono />
+        <div className="rounded-md border border-border/60 bg-background/40 px-3 py-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Safe Browsing status
+          </p>
+          <span
+            className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${statusStyles[safeBrowsing.safe_browsing_status]}`}
+          >
+            {statusLabel[safeBrowsing.safe_browsing_status]}
+          </span>
+        </div>
+      </div>
+
+      {safeBrowsing.safe_browsing_findings.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Threat categories
+          </p>
+          <ul className="mt-1 flex flex-wrap gap-1.5">
+            {safeBrowsing.safe_browsing_findings.map((f, i) => (
+              <li
+                key={i}
+                className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 font-mono text-[10px] text-rose-500"
+              >
+                {f}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <p className="text-sm leading-relaxed text-muted-foreground">
+        {safeBrowsing.safe_browsing_summary}
+      </p>
+    </div>
+  );
+}
