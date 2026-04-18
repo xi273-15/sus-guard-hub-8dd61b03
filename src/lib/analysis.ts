@@ -936,18 +936,50 @@ async function runTavilyOsint(input: {
       // Small risk bump only — this is cautionary, not direct fraud evidence.
       scoreDelta += Math.min(6, 2 + ps.count);
     } else if (isDomainScam) {
-      findings.push(
-        `Public web mentions scam complaints tied to the domain ${ps.subject} (${ps.count} result${ps.count === 1 ? "" : "s"}).`,
-      );
-      whyPoints.push({
-        finding: `Scam complaints publicly tied to the domain ${ps.subject}.`,
-        why: "When scam reports name the exact domain you're being contacted from, that's a much stronger red flag than mentions of a brand name. It suggests the address itself has a history tied to fraud complaints.",
-        severity: "bad",
+      // Decide whether the evidence is "strong and direct" vs. weak/indirect.
+      // Strong = the exact domain appears inside the result content/url AND the
+      // result is clearly about fraud (not just a warning/impersonation advisory).
+      const domainLc = ps.subject.toLowerCase();
+      const directMatches = ps.matches.filter((r) => {
+        const text = `${r.url ?? ""} ${r.content ?? ""}`.toLowerCase();
+        const mentionsDomain = text.includes(domainLc);
+        const directFraud = /\b(fraud|fraudulent|scam (site|website|domain)|phishing|ripoff|rip-off)\b/.test(text);
+        const impersonationContext = /\b(impersonat|warning|beware|advisory|alert|spoof)/.test(text);
+        return mentionsDomain && directFraud && !impersonationContext;
       });
-      nextSteps.push(
-        `Do not reply to ${ps.subject}. Read the public scam reports tied to that domain before taking any action.`,
-      );
-      scoreDelta += Math.min(15, 6 + ps.count * 3);
+      const strongDirect = directMatches.length > 0 && !looksLikeRealOrg;
+
+      if (strongDirect) {
+        findings.push(
+          `Public web mentions scam complaints tied to the domain ${ps.subject} (${ps.count} result${ps.count === 1 ? "" : "s"}).`,
+        );
+        whyPoints.push({
+          finding: `Scam complaints publicly tied to the domain ${ps.subject}.`,
+          why: "When scam reports name the exact domain you're being contacted from, that's a much stronger red flag than mentions of a brand name. It suggests the address itself has a history tied to fraud complaints.",
+          severity: "bad",
+        });
+        nextSteps.push(
+          `Do not reply to ${ps.subject}. Read the public scam reports tied to that domain before taking any action.`,
+        );
+        scoreDelta += Math.min(15, 6 + ps.count * 3);
+      } else {
+        // Indirect / weak / possibly-impersonation evidence — soften the wording
+        // and treat as minor caution rather than a major red flag.
+        findings.push(
+          `Scam-related public mentions were found near the domain ${ps.subject}, but context is limited.`,
+        );
+        whyPoints.push({
+          finding: `Public results mention ${ps.subject} in scam-related discussions, though context is limited.`,
+          why: "These results are cautionary, not proof that the domain itself is fraudulent. The mentions may reflect impersonation warnings, general advisories, or unrelated references rather than direct evidence that this address is malicious. Verify the recruiter through an official channel before sharing anything.",
+          severity: "caution",
+        });
+        nextSteps.push(
+          `Skim the linked sources to see whether they actually describe ${ps.subject} as malicious, or just mention it in passing.`,
+        );
+        // Small bump only when there are no strong legitimacy signals; if the
+        // org looks legit, keep the overall risk essentially unchanged.
+        scoreDelta += looksLikeRealOrg ? Math.min(3, 1 + Math.floor(ps.count / 2)) : Math.min(6, 2 + ps.count);
+      }
     } else {
       // No legitimacy signals AND a company-name scam hit — keep cautionary
       // wording (we still don't want to call the org itself fraudulent).
