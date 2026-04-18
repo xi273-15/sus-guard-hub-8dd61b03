@@ -231,6 +231,8 @@ function Index() {
                         id="recruiterName"
                         label="Recruiter name"
                         icon={<User className="h-3.5 w-3.5" />}
+                        speakText="The full name the recruiter used to contact you. We use it to check if it matches their email and the company they claim to represent."
+                        speakKey="field:recruiterName"
                       >
                         <Input
                           id="recruiterName"
@@ -244,6 +246,8 @@ function Index() {
                         label="Recruiter email"
                         icon={<Mail className="h-3.5 w-3.5" />}
                         required
+                        speakText="The email address the recruiter contacted you from. We check the domain, its registration history, mail infrastructure, and reputation."
+                        speakKey="field:recruiterEmail"
                       >
                         <Input
                           id="recruiterEmail"
@@ -254,6 +258,7 @@ function Index() {
                         />
                       </Field>
                     </div>
+
                   </FormSection>
 
                   <Separator className="bg-border/60" />
