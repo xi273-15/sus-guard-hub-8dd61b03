@@ -2645,6 +2645,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         dns,
         safe_browsing: safeBrowsing,
         ct,
+        wayback,
       };
     }
 
@@ -2938,6 +2939,18 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       summaryParts.push(`Certificate history: ${ct.interpretation}`);
     }
 
+    // Wayback findings, why-point, next step, and audio summary
+    if (wayback.available) {
+      findings.push(`Web history for ${wayback.checked_url}: ${wayback.website_history_summary}`);
+    }
+    if (waybackLookup.whyPoint) why_points.push(waybackLookup.whyPoint);
+    if (waybackLookup.nextStep && next_steps.length < 6 && !next_steps.includes(waybackLookup.nextStep)) {
+      next_steps.push(waybackLookup.nextStep);
+    }
+    if (wayback.available) {
+      summaryParts.push(`Website history: ${wayback.interpretation}`);
+    }
+
     return {
       risk_score: score,
       risk_level: level,
@@ -2953,5 +2966,6 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       dns,
       safe_browsing: safeBrowsing,
       ct,
+      wayback,
     };
   });
