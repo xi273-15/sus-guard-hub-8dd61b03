@@ -1440,6 +1440,12 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     for (const m of matchedPositive) {
       why_points.push({ finding: m.finding, why: m.reason, severity: "good" });
     }
+    // OSINT (Tavily) findings, why-points, and next steps
+    osint.result.findings.forEach((f) => findings.push(f));
+    osint.whyPoints.forEach((p) => why_points.push(p));
+    osint.nextSteps.forEach((s) => {
+      if (next_steps.length < 6 && !next_steps.includes(s)) next_steps.push(s);
+    });
 
     return {
       risk_score: score,
@@ -1449,5 +1455,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       why_points,
       next_steps,
       audio_summary: summaryParts.join(" "),
+      osint_summary: osint.result.summary,
+      osint_findings: osint.result.findings,
+      osint_links: osint.result.links,
     };
   });
