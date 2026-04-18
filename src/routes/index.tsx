@@ -367,8 +367,8 @@ function Index() {
               </form>
             </Card>
           </div>
-        </div>
         )}
+
 
         {stage === "results" && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
