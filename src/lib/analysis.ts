@@ -2983,18 +2983,27 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const ct = ctLookup.result;
     const wayback = waybackLookup.result;
 
-    // Recruiter public-location discovery (depends on Tavily + RDAP being done).
-    const recruiterLocationLookup = await runRecruiterLocation({
-      recruiterName: data.recruiterName,
-      companyName: data.companyName,
-      roleLocation: data.roleLocation,
-      message: data.message,
-      headers: data.headers,
-      osintFindings: osint.result.findings,
-      osintLinks: osint.result.links,
-      rdapCountry: rdap.registrantCountry,
-    });
+    // Recruiter public-location + Website traffic context (run in parallel,
+    // both depend on Tavily + RDAP being done).
+    const [recruiterLocationLookup, websiteTrafficLookup] = await Promise.all([
+      runRecruiterLocation({
+        recruiterName: data.recruiterName,
+        companyName: data.companyName,
+        roleLocation: data.roleLocation,
+        message: data.message,
+        headers: data.headers,
+        osintFindings: osint.result.findings,
+        osintLinks: osint.result.links,
+        rdapCountry: rdap.registrantCountry,
+      }),
+      runWebsiteTraffic({
+        companyDomain: data.companyDomain,
+        roleLocation: data.roleLocation,
+        rdapCountry: rdap.registrantCountry,
+      }),
+    ]);
     const recruiterLocation = recruiterLocationLookup.result;
+    const websiteTraffic = websiteTrafficLookup.result;
     type HeaderAuthCheck = {
       spf: "pass" | "fail" | "softfail" | "none" | "unknown";
       dkim: "pass" | "fail" | "none" | "unknown";
