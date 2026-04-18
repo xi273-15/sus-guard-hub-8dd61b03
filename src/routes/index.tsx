@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import {
   Shield,
   ShieldAlert,
@@ -13,10 +13,7 @@ import {
   ListChecks,
   Info,
   Sparkles,
-  Volume2,
-  Square,
   Loader2,
-  Accessibility,
   CheckCircle2,
   Mailbox,
   Globe2,
