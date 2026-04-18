@@ -2587,7 +2587,27 @@ async function runRecruiterLocation(args: {
     osintLinks: args.osintLinks,
   });
 
-  if (!ai || !ai.location) {
+  let aiResult = ai;
+
+  // Deterministic fallback if the AI bailed: scan OSINT findings + links for "City, Country".
+  if (!aiResult || !aiResult.location) {
+    const haystack = [
+      ...args.osintFindings,
+      ...args.osintLinks.map((l) => `${l.title} ${l.url}`),
+      message,
+    ].join("\n");
+    const heuristic = heuristicLocationFromText(haystack);
+    if (heuristic) {
+      aiResult = {
+        location: heuristic.location,
+        country: heuristic.country,
+        confidence: "low",
+        source: heuristic.source,
+      };
+    }
+  }
+
+  if (!aiResult || !aiResult.location) {
     return {
       result: {
         ...emptyRecruiterLocation(
@@ -2601,7 +2621,7 @@ async function runRecruiterLocation(args: {
     };
   }
 
-  const recruiterCountry = ai.country || normalizeCountryToCode(ai.location);
+  const recruiterCountry = aiResult.country || normalizeCountryToCode(aiResult.location);
   const mismatch =
     !!recruiterCountry && !!hiringCountry && recruiterCountry.toUpperCase() !== hiringCountry.toUpperCase();
 
