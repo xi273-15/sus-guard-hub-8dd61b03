@@ -727,6 +727,9 @@ function Field({
   icon,
   hint,
   required,
+  speakText,
+  speakKey,
+  trailingAction,
   children,
 }: {
   id: string;
@@ -734,23 +737,35 @@ function Field({
   icon?: React.ReactNode;
   hint?: string;
   required?: boolean;
+  speakText?: string;
+  speakKey?: string;
+  trailingAction?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-2">
-      <Label
-        htmlFor={id}
-        className="flex items-center gap-1.5 text-sm font-medium text-foreground"
-      >
-        {icon && <span className="text-primary/80">{icon}</span>}
-        {label}
-        {required && <span className="text-primary">*</span>}
-      </Label>
+      <div className="flex items-center justify-between gap-2">
+        <Label
+          htmlFor={id}
+          className="flex items-center gap-1.5 text-sm font-medium text-foreground"
+        >
+          {icon && <span className="text-primary/80">{icon}</span>}
+          {label}
+          {required && <span className="text-primary">*</span>}
+        </Label>
+        <div className="flex items-center gap-0.5">
+          {speakText && speakKey && (
+            <SpeakButton text={speakText} trackKey={speakKey} />
+          )}
+          {trailingAction}
+        </div>
+      </div>
       {children}
       {hint && <p className="text-xs leading-relaxed text-muted-foreground">{hint}</p>}
     </div>
   );
 }
+
 
 
 function ResultCard({
