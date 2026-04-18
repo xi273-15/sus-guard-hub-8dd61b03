@@ -282,6 +282,17 @@ export function RiskOverview({
         </div>
       </div>
 
+      {/* Disclaimer */}
+      <p className="mt-4 rounded-lg border border-border/50 bg-background/40 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+        <span className="font-semibold text-foreground/80">Heads up:</span>{" "}
+        This score is guidance, not a definitive verdict. Stay cautious even
+        with a low score, and don&apos;t treat a high score as absolute proof
+        of fraud. Recruiter location can sometimes be a signal, but since
+        remote hiring is now common we don&apos;t count it toward the score —
+        it&apos;s shown below as context worth considering alongside other
+        signals.
+      </p>
+
       {/* Context signals — recruiter location + website traffic */}
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
         <RecruiterLocationBlock result={result} />
