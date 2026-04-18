@@ -776,7 +776,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
 
       // Helper to keep findings, reasons, explanations, and steps in sync.
       const note = (
-        severity: HeaderExplanation["severity"],
+        severity: WhyPoint["severity"],
         finding: string,
         why: string,
         nextStep?: string,
