@@ -806,11 +806,14 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (dkimStatus === "pass") {
         result.dkim = "pass";
       } else if (dkimLikelyForwarderBreak) {
-        // Treat as informational, not a red flag.
+        // Not a clean pass, but not a red flag either — give the user context
+        // so they can decide for themselves.
         result.dkim = "pass";
-        result.findings.push("The email's digital signature (DKIM) didn't match exactly, but other checks (DMARC and the receiving mail server) say it's still legitimate.");
-        result.reasons.push("This usually happens when a mail forwarder, mailing list, or company security filter slightly changes the email on its way to you — which breaks the original 'wax seal' even though the sender is real. Because DMARC still passed, the email is most likely genuine.");
-        result.scoreDelta += 2;
+        result.findings.push("The email's digital 'wax seal' (DKIM) didn't match exactly, but the company's anti-impersonation check (DMARC) still passed. This is usually normal — but not always.");
+        result.reasons.push("Most of the time this happens for innocent reasons: a mailing list, an email forwarder, or a company security filter slightly changed the message on its way to you, which breaks the original seal even though the sender is real. In rare cases a scammer can also cause this by replaying or tweaking a real email. Because DMARC still passed here, it leans toward legitimate — but you should still sanity-check the sender if anything else feels off (urgent tone, unexpected links, requests for money or personal info, or a reply-to address that doesn't match the sender).");
+        result.nextSteps.push("If the message itself looks normal, you can usually trust it. If anything feels off, confirm with the sender through a channel you already trust (their official website, a known phone number, or an existing email thread) — don't just reply to this email.");
+        result.scoreDelta += 4;
+        result.floor = Math.max(result.floor, 8);
       } else if (dkimStatus === "fail" || dkimStatus === "permerror") {
         result.dkim = "fail";
         result.findings.push("The email's digital signature (DKIM) failed — the message may have been faked or changed.");
