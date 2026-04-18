@@ -1147,13 +1147,43 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     }
     if (next_steps[0]) summaryParts.push(`Recommended next step: ${next_steps[0]}`);
 
+    // Build per-finding "why this matters" bullets so the user gets a clean,
+    // point-by-point breakdown instead of one big paragraph.
+    const why_points: WhyPoint[] = [];
+    if (domainIsNegative && domainCheck.finding && domainCheck.reason) {
+      why_points.push({ finding: domainCheck.finding, why: domainCheck.reason, severity: "bad" });
+    }
+    for (const m of matchedScam) {
+      why_points.push({ finding: m.finding, why: m.reason, severity: "bad" });
+    }
+    for (const m of matchedCaution) {
+      why_points.push({ finding: m.finding, why: m.reason, severity: "caution" });
+    }
+    // Email-header explanations slot in here so red flags from the headers
+    // appear right alongside the message-based findings.
+    headerAuth.explanations.forEach((e) => why_points.push(e));
+    if (domainIsPositive && domainCheck.finding && domainCheck.reason) {
+      why_points.push({ finding: domainCheck.finding, why: domainCheck.reason, severity: "good" });
+    }
+    if (
+      domainCheck.status === "unverifiable" &&
+      domainCheck.finding &&
+      domainCheck.reason &&
+      (data.recruiterEmail || data.companyDomain)
+    ) {
+      why_points.push({ finding: domainCheck.finding, why: domainCheck.reason, severity: "info" });
+    }
+    for (const m of matchedPositive) {
+      why_points.push({ finding: m.finding, why: m.reason, severity: "good" });
+    }
+
     return {
       risk_score: score,
       risk_level: level,
       findings,
       why_it_matters,
+      why_points,
       next_steps,
       audio_summary: summaryParts.join(" "),
-      header_explanations: headerAuth.explanations,
     };
   });
