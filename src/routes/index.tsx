@@ -19,6 +19,8 @@ import {
   Accessibility,
   CheckCircle2,
   Mailbox,
+  Globe2,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
