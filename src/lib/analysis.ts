@@ -1195,8 +1195,35 @@ function emptyRdap(domain: string | null, error?: string): RdapResult {
     ageSummary: "Domain registration data could not be reliably retrieved.",
     interpretation:
       "We couldn't pull RDAP registration data for this domain, so domain age can't factor into the risk score. Treat this as 'unknown' rather than safe or unsafe.",
+    registrantCountry: null,
     error,
   };
+}
+
+/**
+ * Extract a registrant country (ISO 3166-1 alpha-2 if available, otherwise free text)
+ * from RDAP entities. Looks across registrant/admin/tech roles.
+ */
+function extractRegistrantCountry(entities: RdapEntity[] | undefined): string | null {
+  if (!entities) return null;
+  const ROLES = ["registrant", "administrative", "technical"];
+  for (const e of entities) {
+    if (!e.roles?.some((r) => ROLES.includes(r))) continue;
+    const vcard = e.vcardArray as unknown[] | undefined;
+    if (!Array.isArray(vcard) || vcard.length < 2 || !Array.isArray(vcard[1])) continue;
+    for (const entry of vcard[1] as unknown[]) {
+      if (!Array.isArray(entry) || entry[0] !== "adr") continue;
+      const params = entry[1] as Record<string, unknown> | undefined;
+      const cc = params && typeof params.cc === "string" ? (params.cc as string) : null;
+      if (cc && /^[A-Za-z]{2}$/.test(cc)) return cc.toUpperCase();
+      const adrValue = entry[3];
+      if (Array.isArray(adrValue)) {
+        const country = adrValue[adrValue.length - 1];
+        if (typeof country === "string" && country.trim().length > 0) return country.trim();
+      }
+    }
+  }
+  return null;
 }
 
 function extractRegistrarName(entities: RdapEntity[] | undefined): string | null {
