@@ -395,10 +395,9 @@ function Index() {
               </CardContent>
             </Card>
 
-            {/* Listen to this analysis */}
-            <ListenCard summary={result?.audio_summary} />
           </aside>
         </div>
+
 
         {/* Detailed results */}
         <section aria-labelledby="results-heading" className="mt-12 space-y-5">
