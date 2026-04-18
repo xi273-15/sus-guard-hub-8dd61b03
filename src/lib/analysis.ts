@@ -3747,6 +3747,33 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       summaryParts.push(recruiterLocation.summary);
     }
 
+    // Website traffic context: third-party estimates only. Same gating logic
+    // as recruiter location — geo mismatch alone is never proof of fraud.
+    if (websiteTrafficLookup.whyPoint) why_points.push(websiteTrafficLookup.whyPoint);
+    if (websiteTraffic.traffic_estimate_status !== "unavailable") {
+      summaryParts.push(`Website traffic context: ${websiteTraffic.estimated_visibility_summary} ${websiteTraffic.traffic_context_note}`.trim());
+    }
+    if (websiteTraffic.geo_mismatch && websiteTrafficLookup.scoreDelta > 0) {
+      const otherWeakSignals =
+        matchedCaution.length > 0 ||
+        domainCheck.status === "unverifiable" ||
+        domainCheck.status === "lookalike" ||
+        domainCheck.status === "mismatch" ||
+        domainCheck.status === "public_email" ||
+        osint.scoreDelta > 0 ||
+        rdap.ageBucket === "very_new" ||
+        rdap.ageBucket === "new" ||
+        rdap.ageBucket === "young" ||
+        dns.health === "thin" ||
+        dns.health === "minimal" ||
+        dns.health === "missing" ||
+        wayback.archive_history_status === "thin" ||
+        wayback.archive_history_status === "recent_only";
+      if (otherWeakSignals) {
+        score = Math.min(100, score + websiteTrafficLookup.scoreDelta);
+      }
+    }
+
     return {
       risk_score: score,
       risk_level: level,
