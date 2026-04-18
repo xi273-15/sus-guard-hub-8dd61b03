@@ -77,7 +77,7 @@ function RecruiterLocationBlock({ result }: { result: AnalysisResult }) {
   const loc = result.recruiter_location;
   return (
     <div className="rounded-xl border border-border/60 bg-background/40 p-3.5">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
           <MapPin className="h-3.5 w-3.5 text-primary" />
           Recruiter location
