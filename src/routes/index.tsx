@@ -367,64 +367,76 @@ function Index() {
               </form>
             </Card>
           </div>
-
-          {/* Results column */}
-          <aside className="space-y-6 lg:sticky lg:top-20 lg:self-start">
-            {/* Risk summary */}
-            <Card className="overflow-hidden border-border/60 bg-card/85 shadow-[var(--shadow-elegant)] backdrop-blur">
-              <div
-                className="h-1 w-full"
-                style={{ background: "var(--gradient-primary)" }}
-                aria-hidden
-              />
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Risk score
-                  </CardTitle>
-                  <span
-                    className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
-                      result
-                        ? riskLevelClasses(result.risk_level)
-                        : "border-border/60 bg-background/60 text-muted-foreground"
-                    }`}
-                  >
-                    {loading ? "Analyzing…" : result ? result.risk_level : "Pending"}
-                  </span>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-baseline gap-2">
-                  <span
-                    className={`text-5xl font-bold tracking-tight ${
-                      result ? "text-foreground" : "text-foreground/40"
-                    }`}
-                  >
-                    {loading ? "…" : result ? result.risk_score : "—"}
-                  </span>
-                  <span className="text-sm text-muted-foreground">/ 100</span>
-                </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full bg-primary transition-all duration-500"
-                    style={{ width: `${result ? result.risk_score : 0}%` }}
-                  />
-                </div>
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Low</span>
-                  <span>Medium</span>
-                  <span>High</span>
-                  <span>Critical</span>
-                </div>
-              </CardContent>
-            </Card>
-
-          </aside>
         </div>
+        )}
 
+        {stage === "results" && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="flex items-center justify-between gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={resetToInput}
+              className="gap-2"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Check another recruiter
+            </Button>
+            <span className="text-xs text-muted-foreground">Analysis results</span>
+          </div>
 
-        {/* Detailed results */}
-        <section aria-labelledby="results-heading" className="mt-12 space-y-5">
+          {/* Risk summary */}
+          <Card className="overflow-hidden border-border/60 bg-card/85 shadow-[var(--shadow-elegant)] backdrop-blur">
+            <div
+              className="h-1 w-full"
+              style={{ background: "var(--gradient-primary)" }}
+              aria-hidden
+            />
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Risk score
+                </CardTitle>
+                <span
+                  className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                    result
+                      ? riskLevelClasses(result.risk_level)
+                      : "border-border/60 bg-background/60 text-muted-foreground"
+                  }`}
+                >
+                  {loading ? "Analyzing…" : result ? result.risk_level : "Pending"}
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-baseline gap-2">
+                <span
+                  className={`text-5xl font-bold tracking-tight ${
+                    result ? "text-foreground" : "text-foreground/40"
+                  }`}
+                >
+                  {loading ? "…" : result ? result.risk_score : "—"}
+                </span>
+                <span className="text-sm text-muted-foreground">/ 100</span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full bg-primary transition-all duration-500"
+                  style={{ width: `${result ? result.risk_score : 0}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Low</span>
+                <span>Medium</span>
+                <span>High</span>
+                <span>Critical</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Detailed results */}
+          <section aria-labelledby="results-heading" className="mt-4 space-y-5">
           <div className="flex items-end justify-between gap-4">
             <div>
               <h2
