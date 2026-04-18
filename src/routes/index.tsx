@@ -36,6 +36,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { analyzeRecruiter, type AnalysisResult } from "@/lib/analysis";
+import { FloatingAudioAssistant } from "@/components/floating-audio-assistant";
 
 export const Route = createFileRoute("/")({
   component: Index,
