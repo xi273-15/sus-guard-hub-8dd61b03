@@ -17,6 +17,17 @@ export type WhyPoint = {
   severity: "good" | "info" | "caution" | "bad";
 };
 
+export type OsintLink = {
+  title: string;
+  url: string;
+};
+
+export type OsintResult = {
+  summary: string;
+  findings: string[];
+  links: OsintLink[];
+};
+
 export type AnalysisResult = {
   risk_score: number;
   risk_level: RiskLevel;
@@ -25,6 +36,9 @@ export type AnalysisResult = {
   why_points: WhyPoint[];
   next_steps: string[];
   audio_summary: string;
+  osint_summary: string;
+  osint_findings: string[];
+  osint_links: OsintLink[];
 };
 
 type SignalKind = "scam" | "caution" | "positive";
@@ -692,12 +706,254 @@ function analyzeDomainAlignment(
   };
 }
 
+// ---------- Tavily OSINT enrichment ----------
+type TavilySearchResult = {
+  title?: string;
+  url?: string;
+  content?: string;
+  score?: number;
+};
+
+type TavilyResponse = {
+  answer?: string;
+  results?: TavilySearchResult[];
+};
+
+type OsintInternal = {
+  result: OsintResult;
+  scoreDelta: number;
+  whyPoints: WhyPoint[];
+  nextSteps: string[];
+};
+
+const SCAM_KEYWORDS = [
+  "scam",
+  "scammer",
+  "fraud",
+  "fraudulent",
+  "fake recruiter",
+  "fake job",
+  "phishing",
+  "ripoff",
+  "rip-off",
+  "stolen",
+  "complaint",
+];
+
+const LEGIT_KEYWORDS = [
+  "linkedin.com/in/",
+  "linkedin.com/company/",
+  "crunchbase.com",
+  "bloomberg.com",
+  "glassdoor.com",
+  "wikipedia.org",
+  "github.com",
+  "techcrunch.com",
+];
+
+async function tavilySearch(query: string, apiKey: string): Promise<TavilyResponse | null> {
+  try {
+    const res = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_key: apiKey,
+        query,
+        search_depth: "basic",
+        max_results: 5,
+        include_answer: false,
+      }),
+    });
+    if (!res.ok) {
+      console.error(`Tavily query failed [${res.status}] for "${query}"`);
+      return null;
+    }
+    return (await res.json()) as TavilyResponse;
+  } catch (err) {
+    console.error("Tavily request error:", err);
+    return null;
+  }
+}
+
+function dedupeLinks(links: OsintLink[]): OsintLink[] {
+  const seen = new Set<string>();
+  const out: OsintLink[] = [];
+  for (const l of links) {
+    if (!l.url || !l.title) continue;
+    if (seen.has(l.url)) continue;
+    seen.add(l.url);
+    out.push(l);
+    if (out.length >= 6) break;
+  }
+  return out;
+}
+
+async function runTavilyOsint(input: {
+  recruiterName?: string;
+  companyName?: string;
+  companyDomain?: string;
+}): Promise<OsintInternal> {
+  const recruiter = (input.recruiterName ?? "").trim();
+  const company = (input.companyName ?? "").trim();
+  const domain = (input.companyDomain ?? "")
+    .trim()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "");
+
+  if (!recruiter && !company && !domain) {
+    return {
+      result: {
+        summary:
+          "We didn't run a public-web check because no recruiter name, company name, or company domain was provided.",
+        findings: [],
+        links: [],
+      },
+      scoreDelta: 0,
+      whyPoints: [],
+      nextSteps: [],
+    };
+  }
+
+  const apiKey = process.env.TAVILY_API_KEY;
+  if (!apiKey) {
+    console.warn("TAVILY_API_KEY is not configured — skipping OSINT enrichment.");
+    return {
+      result: {
+        summary: "Public-web check is currently unavailable.",
+        findings: [],
+        links: [],
+      },
+      scoreDelta: 0,
+      whyPoints: [],
+      nextSteps: [],
+    };
+  }
+
+  const queries: { kind: "consistency" | "recruiter" | "company_scam" | "domain_scam"; q: string }[] = [];
+  if (recruiter && company) queries.push({ kind: "consistency", q: `${recruiter} ${company}` });
+  if (recruiter) queries.push({ kind: "recruiter", q: `${recruiter} recruiter` });
+  if (company) queries.push({ kind: "company_scam", q: `${company} scam` });
+  if (domain) queries.push({ kind: "domain_scam", q: `${domain} scam` });
+
+  const responses = await Promise.all(queries.map((q) => tavilySearch(q.q, apiKey)));
+
+  const findings: string[] = [];
+  const allLinks: OsintLink[] = [];
+  const whyPoints: WhyPoint[] = [];
+  const nextSteps: string[] = [];
+  let scoreDelta = 0;
+  let consistencyHits = 0;
+  let scamHits = 0;
+  let totalResults = 0;
+
+  for (let i = 0; i < queries.length; i++) {
+    const { kind } = queries[i];
+    const resp = responses[i];
+    if (!resp || !resp.results) continue;
+    const results = resp.results.slice(0, 5);
+    totalResults += results.length;
+
+    if (kind === "consistency") {
+      const matches = results.filter((r) => {
+        const text = `${r.title ?? ""} ${r.url ?? ""} ${r.content ?? ""}`.toLowerCase();
+        return LEGIT_KEYWORDS.some((k) => text.includes(k));
+      });
+      if (matches.length > 0) {
+        consistencyHits += matches.length;
+        findings.push(
+          `Public results connect ${recruiter} to ${company} (e.g. LinkedIn, Crunchbase, or company pages).`,
+        );
+        whyPoints.push({
+          finding: `Public web results link ${recruiter} to ${company}.`,
+          why: "Finding the recruiter on LinkedIn, Crunchbase, or the company's own pages is a small positive signal that the person and company they claim to represent are real and connected.",
+          severity: "good",
+        });
+      }
+      matches.slice(0, 2).forEach((r) =>
+        allLinks.push({ title: r.title ?? r.url ?? "Result", url: r.url ?? "" }),
+      );
+    } else if (kind === "recruiter") {
+      results.slice(0, 2).forEach((r) =>
+        allLinks.push({ title: r.title ?? r.url ?? "Result", url: r.url ?? "" }),
+      );
+    } else {
+      const matches = results.filter((r) => {
+        const text = `${r.title ?? ""} ${r.content ?? ""}`.toLowerCase();
+        return SCAM_KEYWORDS.some((k) => text.includes(k));
+      });
+      if (matches.length > 0) {
+        scamHits += matches.length;
+        const subject = kind === "company_scam" ? company : domain;
+        findings.push(
+          `Public web mentions scam-related complaints involving ${subject} (${matches.length} result${matches.length === 1 ? "" : "s"}).`,
+        );
+        whyPoints.push({
+          finding: `Scam-related public mentions involving ${subject}.`,
+          why: "When public results discuss scams, fraud complaints, or fake-job warnings around a company or domain, it raises the likelihood that the recruiter contacting you is part of (or imitating) that pattern. Read the linked sources before deciding.",
+          severity: "bad",
+        });
+        nextSteps.push(
+          `Read the public scam reports about ${subject} before sharing any personal info or replying.`,
+        );
+      }
+      matches.slice(0, 2).forEach((r) =>
+        allLinks.push({ title: r.title ?? r.url ?? "Result", url: r.url ?? "" }),
+      );
+    }
+  }
+
+  if (scamHits >= 1) scoreDelta += Math.min(15, 6 + scamHits * 3);
+  if (consistencyHits >= 1 && scamHits === 0) scoreDelta -= Math.min(8, 3 + consistencyHits);
+
+  let summary: string;
+  if (totalResults === 0) {
+    summary =
+      "We found limited public evidence about this recruiter or company. That alone does not mean it's a scam — it just means we can't confirm much from public search results.";
+    whyPoints.push({
+      finding: "Limited public web evidence.",
+      why: "Some real recruiters and small companies have a thin web footprint. Treat this as 'unknown' rather than proof of a scam — verify through the company's official careers page.",
+      severity: "info",
+    });
+  } else if (scamHits > 0 && consistencyHits > 0) {
+    summary =
+      "Public search results are mixed: we found some legitimacy signals but also scam-related mentions. Read the linked sources carefully before deciding.";
+  } else if (scamHits > 0) {
+    summary =
+      "We found scam-related public mentions involving this company or domain. This raises the likelihood of a scam — review the linked sources before sharing anything.";
+  } else if (consistencyHits > 0) {
+    summary =
+      "Public web results are consistent with a real recruiter at this company (e.g. LinkedIn or company pages). This is a small positive signal, not a guarantee.";
+  } else {
+    summary =
+      "We found limited public evidence connecting this recruiter to the claimed company. That alone does not mean it's a scam — verify through the company's official careers page.";
+    whyPoints.push({
+      finding: "Limited public evidence connecting recruiter and company.",
+      why: "We couldn't find clear public sources tying this person to this company. This is not proof of a scam, but it's worth confirming through the company's official careers page or LinkedIn.",
+      severity: "info",
+    });
+  }
+
+  return {
+    result: { summary, findings, links: dedupeLinks(allLinks) },
+    scoreDelta,
+    whyPoints,
+    nextSteps,
+  };
+}
+
 export const analyzeRecruiter = createServerFn({ method: "POST" })
   .inputValidator((input: AnalysisInput) => input)
   .handler(async ({ data }): Promise<AnalysisResult> => {
     const message = (data.message ?? "").trim();
     const lower = message.toLowerCase();
     const domainCheck = analyzeDomainAlignment(data.recruiterEmail, data.companyDomain);
+
+    // ---------- Tavily OSINT enrichment (server-side only) ----------
+    const osint = await runTavilyOsint({
+      recruiterName: data.recruiterName,
+      companyName: data.companyName,
+      companyDomain: data.companyDomain,
+    });
     type HeaderAuthCheck = {
       spf: "pass" | "fail" | "softfail" | "none" | "unknown";
       dkim: "pass" | "fail" | "none" | "unknown";
@@ -961,11 +1217,14 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       let noMsgScore = 0;
       const authDelta = headerAuth.scoreDelta;
       const authFloor = headerAuth.floor;
-      if (domainCheck.scoreDelta > 0 || authDelta > 0) {
-        noMsgScore = Math.min(85, 15 + domainCheck.scoreDelta + authDelta);
+      if (domainCheck.scoreDelta > 0 || authDelta > 0 || osint.scoreDelta > 0) {
+        noMsgScore = Math.min(85, 15 + domainCheck.scoreDelta + authDelta + Math.max(0, osint.scoreDelta));
       }
+      if (osint.scoreDelta < 0) noMsgScore = Math.max(0, noMsgScore + osint.scoreDelta);
       if (domainCheck.floor > 0) noMsgScore = Math.max(noMsgScore, domainCheck.floor);
       if (authFloor > 0) noMsgScore = Math.max(noMsgScore, authFloor);
+      osint.result.findings.forEach((f) => baseFindings.push(f));
+      osint.nextSteps.forEach((s) => baseSteps.push(s));
 
       const noMsgLevel = levelFor(noMsgScore);
 
@@ -981,6 +1240,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         noMsgWhyPoints.push({ finding: domainCheck.finding, why: domainCheck.reason, severity: sev });
       }
       headerAuth.explanations.forEach((e) => noMsgWhyPoints.push(e));
+      osint.whyPoints.forEach((p) => noMsgWhyPoints.push(p));
 
       return {
         risk_score: noMsgScore,
@@ -994,6 +1254,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         audio_summary: noMsgNegative
           ? `${domainCheck.finding} Paste the recruiter's full message to get a complete risk assessment.`
           : "No message was provided. Paste the recruiter's full message to get a real risk assessment.",
+        osint_summary: osint.result.summary,
+        osint_findings: osint.result.findings,
+        osint_links: osint.result.links,
       };
     }
 
@@ -1032,6 +1295,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (matchedScam.length >= 5) score += 6;
 
     score += domainCheck.scoreDelta;
+    score += osint.scoreDelta;
 
     // Cap how much positive wording can lower the score. Strong red flags
     // (high-weight scam signals or domain mismatch/lookalike/public_email)
@@ -1176,6 +1440,12 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     for (const m of matchedPositive) {
       why_points.push({ finding: m.finding, why: m.reason, severity: "good" });
     }
+    // OSINT (Tavily) findings, why-points, and next steps
+    osint.result.findings.forEach((f) => findings.push(f));
+    osint.whyPoints.forEach((p) => why_points.push(p));
+    osint.nextSteps.forEach((s) => {
+      if (next_steps.length < 6 && !next_steps.includes(s)) next_steps.push(s);
+    });
 
     return {
       risk_score: score,
@@ -1185,5 +1455,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       why_points,
       next_steps,
       audio_summary: summaryParts.join(" "),
+      osint_summary: osint.result.summary,
+      osint_findings: osint.result.findings,
+      osint_links: osint.result.links,
     };
   });

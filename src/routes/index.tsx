@@ -19,6 +19,8 @@ import {
   Accessibility,
   CheckCircle2,
   Mailbox,
+  Globe2,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -530,6 +532,53 @@ function Index() {
                   </li>
                 ))}
               </ul>
+            )}
+          </ResultCard>
+
+          <ResultCard
+            icon={<Globe2 className="h-4 w-4" />}
+            title="Public web evidence"
+            description="What public search results say about this recruiter, company, or domain. Powered by Tavily."
+            full
+            loading={loading}
+            hasData={!!result}
+          >
+            {result && (
+              <div className="space-y-4">
+                <p className="text-sm leading-relaxed text-foreground/90">{result.osint_summary}</p>
+                {result.osint_findings.length > 0 && (
+                  <ul className="space-y-2">
+                    {result.osint_findings.map((f, i) => (
+                      <li key={i} className="flex gap-2 text-sm leading-relaxed">
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                        <span>{f}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {result.osint_links.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Relevant public links
+                    </p>
+                    <ul className="space-y-1.5">
+                      {result.osint_links.map((l, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm leading-relaxed">
+                          <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/80" />
+                          <a
+                            href={l.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="break-all text-primary underline-offset-4 hover:underline"
+                          >
+                            {l.title}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
             )}
           </ResultCard>
         </section>
