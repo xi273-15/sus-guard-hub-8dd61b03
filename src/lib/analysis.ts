@@ -708,6 +708,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       findings: string[];
       reasons: string[];
       nextSteps: string[];
+      explanations: HeaderExplanation[];
       scoreDelta: number;
       floor: number;
     };
