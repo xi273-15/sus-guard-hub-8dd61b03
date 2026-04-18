@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Play, Pause, Loader2, MessageCircle, Accessibility } from "lucide-react";
+import { Play, Loader2, MessageCircle, Accessibility, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTtsPlayer } from "@/hooks/use-tts-player";
 
@@ -38,7 +38,7 @@ export function FloatingAudioAssistant({
   /** @deprecated autoplay is intentionally disabled — kept for backwards compatibility */
   autoPlayIntro?: boolean;
 }) {
-  const { play, status, activeKey, activeText, currentTime, duration, level } = useTtsPlayer();
+  const { play, stop, status, activeKey, activeText, currentTime, duration, level } = useTtsPlayer();
 
   // Decide what this orb should play when triggered: prefer summary, fallback to intro
   const primaryText = summary?.trim() || introScript?.trim() || "";
@@ -80,7 +80,7 @@ export function FloatingAudioAssistant({
 
   const orbLabel =
     status === "playing"
-      ? "Pause spoken audio"
+      ? "Stop spoken audio"
       : status === "paused"
         ? "Resume spoken audio"
         : status === "loading"
@@ -102,29 +102,34 @@ export function FloatingAudioAssistant({
   }
 
   function handleOrbClick() {
-    // Orb only toggles pause/resume once playback has begun.
+    // Orb acts as global stop/resume for the active stream.
     if (!hasStarted) return;
-    play(primaryText, primaryKey);
+    if (status === "paused") {
+      // Resume the active section
+      play(activeText, activeKey || primaryKey);
+    } else {
+      // Stop everything (single-stream guarantee)
+      stop();
+    }
   }
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2 sm:bottom-6 sm:right-6"
+      className="fixed bottom-4 right-4 z-50 flex items-end justify-end gap-2 sm:bottom-6 sm:right-6"
       role="region"
       aria-label="Accessibility audio assistant"
     >
-      {/* Subtitle strip — sits above the orb visually */}
+      {/* Subtitle strip — sits to the LEFT of the orb so motion never covers it */}
       <div
         aria-live="polite"
         aria-atomic="true"
         className={cn(
-          "pointer-events-none relative z-20 max-w-[min(22rem,calc(100vw-3rem))] origin-bottom-right transition-all duration-300 ease-out",
-          showSubtitle ? "opacity-100 scale-100 translate-y-0" : "opacity-0 scale-95 translate-y-1",
+          "pointer-events-none relative z-30 max-w-[min(20rem,calc(100vw-7rem))] origin-bottom-right transition-all duration-300 ease-out",
+          showSubtitle ? "opacity-100 scale-100 translate-x-0" : "opacity-0 scale-95 translate-x-1 pointer-events-none",
         )}
       >
         {showSubtitle && currentLine && (
           <div
-            // Inverted contrast: dark bubble in light mode, light bubble in dark mode
             className="rounded-2xl border border-foreground/10 bg-foreground px-3.5 py-2 text-xs leading-snug text-background shadow-[0_10px_30px_-10px_rgba(0,0,0,0.45)] sm:text-sm"
             key={`${activeKey}-${activeLine}`}
           >
@@ -154,8 +159,8 @@ export function FloatingAudioAssistant({
         )}
       </div>
 
-      {/* Controls row */}
-      <div className="relative z-10 flex items-end gap-2">
+      {/* Controls column — trigger + orb stacked on the right */}
+      <div className="relative z-10 flex flex-col items-end gap-2">
         {/* Speech-bubble trigger — explicit "start reading" control */}
         {!hasStarted && (
           <button
@@ -257,7 +262,7 @@ export function FloatingAudioAssistant({
             {status === "loading" ? (
               <Loader2 className="h-6 w-6 animate-spin" />
             ) : status === "playing" ? (
-              <Pause className="h-6 w-6 fill-current" />
+              <Square className="h-5 w-5 fill-current" />
             ) : status === "paused" ? (
               <Play className="h-6 w-6 fill-current" />
             ) : (
