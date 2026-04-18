@@ -64,6 +64,16 @@ export type DnsResult = {
   error?: string;
 };
 
+export type SafeBrowsingStatus = "flagged" | "not_flagged" | "unknown";
+
+export type SafeBrowsingResult = {
+  checked_url: string | null;
+  safe_browsing_status: SafeBrowsingStatus;
+  safe_browsing_findings: string[]; // e.g. ["MALWARE", "SOCIAL_ENGINEERING"]
+  safe_browsing_summary: string;
+  error?: string;
+};
+
 export type AnalysisResult = {
   risk_score: number;
   risk_level: RiskLevel;
@@ -77,6 +87,7 @@ export type AnalysisResult = {
   osint_links: OsintLink[];
   rdap: RdapResult;
   dns: DnsResult;
+  safe_browsing: SafeBrowsingResult;
 };
 
 type SignalKind = "scam" | "caution" | "positive";
@@ -1485,6 +1496,171 @@ async function runDnsLookup(input: {
 }
 
 
+// ---------- Google Safe Browsing ----------
+function emptySafeBrowsing(
+  checkedUrl: string | null,
+  status: SafeBrowsingStatus,
+  summary: string,
+  error?: string,
+): SafeBrowsingResult {
+  return {
+    checked_url: checkedUrl,
+    safe_browsing_status: status,
+    safe_browsing_findings: [],
+    safe_browsing_summary: summary,
+    error,
+  };
+}
+
+async function runSafeBrowsing(input: {
+  companyDomain?: string;
+}): Promise<{
+  result: SafeBrowsingResult;
+  scoreDelta: number;
+  floor: number;
+  whyPoint: WhyPoint | null;
+  nextStep: string | null;
+}> {
+  const apiKey = process.env.GOOGLE_SAFE_BROWSING_API_KEY;
+  const rawDomain = input.companyDomain ? normalizeCompanyDomain(input.companyDomain) : null;
+  const checkedUrl = rawDomain ? `https://${rawDomain}` : null;
+
+  if (!checkedUrl) {
+    return {
+      result: emptySafeBrowsing(null, "unknown", "No company website provided to check."),
+      scoreDelta: 0,
+      floor: 0,
+      whyPoint: null,
+      nextStep: null,
+    };
+  }
+
+  if (!apiKey) {
+    return {
+      result: emptySafeBrowsing(
+        checkedUrl,
+        "unknown",
+        "Google Safe Browsing check is not configured, so site reputation could not be verified.",
+        "missing_api_key",
+      ),
+      scoreDelta: 0,
+      floor: 0,
+      whyPoint: null,
+      nextStep: null,
+    };
+  }
+
+  try {
+    const res = await fetch(
+      `https://safebrowsing.googleapis.com/v4/threatMatches:find?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client: { clientId: "suscruit", clientVersion: "1.0.0" },
+          threatInfo: {
+            threatTypes: [
+              "MALWARE",
+              "SOCIAL_ENGINEERING",
+              "UNWANTED_SOFTWARE",
+              "POTENTIALLY_HARMFUL_APPLICATION",
+            ],
+            platformTypes: ["ANY_PLATFORM"],
+            threatEntryTypes: ["URL"],
+            threatEntries: [{ url: checkedUrl }],
+          },
+        }),
+      },
+    );
+
+    if (!res.ok) {
+      return {
+        result: emptySafeBrowsing(
+          checkedUrl,
+          "unknown",
+          "Google Safe Browsing did not return a result for this site, so its reputation could not be verified.",
+          `http_${res.status}`,
+        ),
+        scoreDelta: 0,
+        floor: 0,
+        whyPoint: null,
+        nextStep: null,
+      };
+    }
+
+    const json = (await res.json()) as { matches?: Array<{ threatType?: string }> };
+    const matches = Array.isArray(json.matches) ? json.matches : [];
+
+    if (matches.length > 0) {
+      const types = Array.from(
+        new Set(matches.map((m) => (m.threatType ?? "UNKNOWN").toString())),
+      );
+      const human = types
+        .map((t) =>
+          t === "MALWARE"
+            ? "malware"
+            : t === "SOCIAL_ENGINEERING"
+              ? "phishing / social engineering"
+              : t === "UNWANTED_SOFTWARE"
+                ? "unwanted software"
+                : t === "POTENTIALLY_HARMFUL_APPLICATION"
+                  ? "potentially harmful application"
+                  : t.toLowerCase(),
+        )
+        .join(", ");
+      const summary = `Google Safe Browsing currently flags ${rawDomain} for: ${human}. Google considers this site unsafe or harmful.`;
+      return {
+        result: {
+          checked_url: checkedUrl,
+          safe_browsing_status: "flagged",
+          safe_browsing_findings: types,
+          safe_browsing_summary: summary,
+        },
+        scoreDelta: 25,
+        floor: 60,
+        whyPoint: {
+          finding: `${rawDomain} is currently flagged by Google Safe Browsing (${human}).`,
+          why: "Google's Safe Browsing service maintains a list of sites known to host malware, phishing, or other harmful content. A current flag is a strong signal that this site is unsafe.",
+          severity: "bad",
+        },
+        nextStep: `Do not visit or submit any information to ${rawDomain}. Google Safe Browsing currently flags it as unsafe.`,
+      };
+    }
+
+    const summary = `Google Safe Browsing does not currently flag ${rawDomain}, but that is not proof the site is safe.`;
+    return {
+      result: {
+        checked_url: checkedUrl,
+        safe_browsing_status: "not_flagged",
+        safe_browsing_findings: [],
+        safe_browsing_summary: summary,
+      },
+      scoreDelta: -1,
+      floor: 0,
+      whyPoint: {
+        finding: `${rawDomain} is not currently on Google Safe Browsing's list of unsafe sites.`,
+        why: "Google's Safe Browsing service didn't return a hit for this site. That is mildly reassuring but not proof of safety — many scam sites are too new or too small to be listed.",
+        severity: "info",
+      },
+      nextStep: null,
+    };
+  } catch (err) {
+    return {
+      result: emptySafeBrowsing(
+        checkedUrl,
+        "unknown",
+        "Google Safe Browsing check failed, so site reputation could not be verified.",
+        err instanceof Error ? err.message : "unknown_error",
+      ),
+      scoreDelta: 0,
+      floor: 0,
+      whyPoint: null,
+      nextStep: null,
+    };
+  }
+}
+
+
 export const analyzeRecruiter = createServerFn({ method: "POST" })
   .inputValidator((input: AnalysisInput) => input)
   .handler(async ({ data }): Promise<AnalysisResult> => {
@@ -1493,7 +1669,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const domainCheck = analyzeDomainAlignment(data.recruiterEmail, data.companyDomain);
 
     // ---------- Tavily OSINT + RDAP + DNS (server-side only, in parallel) ----------
-    const [osint, rdapLookup, dnsLookup] = await Promise.all([
+    const [osint, rdapLookup, dnsLookup, safeBrowsingLookup] = await Promise.all([
       runTavilyOsint({
         recruiterName: data.recruiterName,
         companyName: data.companyName,
@@ -1507,9 +1683,13 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         recruiterEmail: data.recruiterEmail,
         companyName: data.companyName,
       }),
+      runSafeBrowsing({
+        companyDomain: data.companyDomain,
+      }),
     ]);
     const rdap = rdapLookup.result;
     const dns = dnsLookup.result;
+    const safeBrowsing = safeBrowsingLookup.result;
     type HeaderAuthCheck = {
       spf: "pass" | "fail" | "softfail" | "none" | "unknown";
       dkim: "pass" | "fail" | "none" | "unknown";
@@ -1837,6 +2017,16 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         baseFindings.push(`DNS for ${dns.domain}: ${dns.summary}`);
       }
       if (dnsLookup.nextStep) baseSteps.push(dnsLookup.nextStep);
+      if (safeBrowsingLookup.scoreDelta > 0) {
+        noMsgScore = Math.min(95, noMsgScore + safeBrowsingLookup.scoreDelta);
+      } else if (safeBrowsingLookup.scoreDelta < 0) {
+        noMsgScore = Math.max(0, noMsgScore + safeBrowsingLookup.scoreDelta);
+      }
+      if (safeBrowsingLookup.floor > 0) noMsgScore = Math.max(noMsgScore, safeBrowsingLookup.floor);
+      if (safeBrowsing.safe_browsing_status === "flagged") {
+        baseFindings.push(safeBrowsing.safe_browsing_summary);
+      }
+      if (safeBrowsingLookup.nextStep) baseSteps.push(safeBrowsingLookup.nextStep);
 
       const noMsgLevel = levelFor(noMsgScore);
 
@@ -1855,6 +2045,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       osint.whyPoints.forEach((p) => noMsgWhyPoints.push(p));
       if (rdapLookup.whyPoint) noMsgWhyPoints.push(rdapLookup.whyPoint);
       if (dnsLookup.whyPoint) noMsgWhyPoints.push(dnsLookup.whyPoint);
+      if (safeBrowsingLookup.whyPoint) noMsgWhyPoints.push(safeBrowsingLookup.whyPoint);
 
       return {
         risk_score: noMsgScore,
@@ -1873,6 +2064,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         osint_links: osint.result.links,
         rdap,
         dns,
+        safe_browsing: safeBrowsing,
       };
     }
 
@@ -1914,6 +2106,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     score += osint.scoreDelta;
     score += rdapLookup.scoreDelta;
     score += dnsLookup.scoreDelta;
+    score += safeBrowsingLookup.scoreDelta;
 
     // Cap how much positive wording can lower the score. Strong red flags
     // (high-weight scam signals or domain mismatch/lookalike/public_email)
@@ -1946,6 +2139,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     }
     if (dnsLookup.floor > 0) {
       score = Math.max(score, dnsLookup.floor);
+    }
+    if (safeBrowsingLookup.floor > 0) {
+      score = Math.max(score, safeBrowsingLookup.floor);
     }
     score = Math.max(0, Math.min(100, Math.round(score)));
     const level = levelFor(score);
@@ -2126,6 +2322,22 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       summaryParts.push(`DNS and email infrastructure: ${dns.summary}. ${dns.interpretation}`);
     }
 
+    // Safe Browsing findings, why-point, next step, and audio summary
+    if (safeBrowsing.safe_browsing_status === "flagged") {
+      findings.push(safeBrowsing.safe_browsing_summary);
+    }
+    if (safeBrowsingLookup.whyPoint) why_points.push(safeBrowsingLookup.whyPoint);
+    if (
+      safeBrowsingLookup.nextStep &&
+      next_steps.length < 6 &&
+      !next_steps.includes(safeBrowsingLookup.nextStep)
+    ) {
+      next_steps.push(safeBrowsingLookup.nextStep);
+    }
+    if (safeBrowsing.safe_browsing_status !== "unknown") {
+      summaryParts.push(`Site reputation: ${safeBrowsing.safe_browsing_summary}`);
+    }
+
     return {
       risk_score: score,
       risk_level: level,
@@ -2139,5 +2351,6 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       osint_links: osint.result.links,
       rdap,
       dns,
+      safe_browsing: safeBrowsing,
     };
   });

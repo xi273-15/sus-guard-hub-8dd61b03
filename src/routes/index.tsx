@@ -20,6 +20,7 @@ import {
   ExternalLink,
   CalendarClock,
   Network,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +35,7 @@ import {
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/theme-toggle";
-import type { RdapResult, DnsResult } from "@/lib/analysis";
+import type { RdapResult, DnsResult, SafeBrowsingResult } from "@/lib/analysis";
 import { analyzeRecruiter, type AnalysisResult } from "@/lib/analysis";
 import { FloatingAudioAssistant } from "@/components/floating-audio-assistant";
 
@@ -603,6 +604,17 @@ function Index() {
           >
             {result && <DnsCardBody dns={result.dns} />}
           </ResultCard>
+
+          <ResultCard
+            icon={<ShieldCheck className="h-4 w-4" />}
+            title="Site reputation"
+            description="Whether the company website is currently flagged by Google Safe Browsing for malware, phishing, or other harmful content."
+            full
+            loading={loading}
+            hasData={!!result}
+          >
+            {result && <SafeBrowsingCardBody safeBrowsing={result.safe_browsing} />}
+          </ResultCard>
         </section>
 
         <footer className="mt-16 border-t border-border/60 pt-8 pb-6 text-center text-sm text-muted-foreground">
@@ -916,6 +928,59 @@ function DnsCardBody({ dns }: { dns: DnsResult }) {
           </ul>
         </div>
       )}
+    </div>
+  );
+}
+
+function SafeBrowsingCardBody({ safeBrowsing }: { safeBrowsing: SafeBrowsingResult }) {
+  const statusStyles: Record<SafeBrowsingResult["safe_browsing_status"], string> = {
+    flagged: "text-rose-500 border-rose-500/30 bg-rose-500/10",
+    not_flagged: "text-emerald-500 border-emerald-500/30 bg-emerald-500/10",
+    unknown: "border-border/60 bg-background/60 text-muted-foreground",
+  };
+  const statusLabel: Record<SafeBrowsingResult["safe_browsing_status"], string> = {
+    flagged: "Flagged as unsafe",
+    not_flagged: "Not currently flagged",
+    unknown: "Unknown",
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <RdapField label="Checked URL" value={safeBrowsing.checked_url ?? "—"} mono />
+        <div className="rounded-md border border-border/60 bg-background/40 px-3 py-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Safe Browsing status
+          </p>
+          <span
+            className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${statusStyles[safeBrowsing.safe_browsing_status]}`}
+          >
+            {statusLabel[safeBrowsing.safe_browsing_status]}
+          </span>
+        </div>
+      </div>
+
+      {safeBrowsing.safe_browsing_findings.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Threat categories
+          </p>
+          <ul className="mt-1 flex flex-wrap gap-1.5">
+            {safeBrowsing.safe_browsing_findings.map((f, i) => (
+              <li
+                key={i}
+                className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 font-mono text-[10px] text-rose-500"
+              >
+                {f}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <p className="text-sm leading-relaxed text-muted-foreground">
+        {safeBrowsing.safe_browsing_summary}
+      </p>
     </div>
   );
 }
