@@ -2114,6 +2114,18 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       summaryParts.push(`Domain registration: ${rdap.ageSummary} ${rdap.interpretation}`);
     }
 
+    // DNS findings, why-point, next step, and audio summary
+    if (dns.available) {
+      findings.push(`DNS for ${dns.domain}: ${dns.summary}`);
+    }
+    if (dnsLookup.whyPoint) why_points.push(dnsLookup.whyPoint);
+    if (dnsLookup.nextStep && next_steps.length < 6 && !next_steps.includes(dnsLookup.nextStep)) {
+      next_steps.push(dnsLookup.nextStep);
+    }
+    if (dns.available) {
+      summaryParts.push(`DNS and email infrastructure: ${dns.summary}. ${dns.interpretation}`);
+    }
+
     return {
       risk_score: score,
       risk_level: level,
@@ -2126,5 +2138,6 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       osint_findings: osint.result.findings,
       osint_links: osint.result.links,
       rdap,
+      dns,
     };
   });
