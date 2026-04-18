@@ -2393,6 +2393,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         rdap,
         dns,
         safe_browsing: safeBrowsing,
+        ct,
       };
     }
 
@@ -2670,6 +2671,18 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       summaryParts.push(`Site reputation: ${safeBrowsing.safe_browsing_summary}`);
     }
 
+    // CT findings, why-point, next step, and audio summary
+    if (ct.available && ct.certificatesFound) {
+      findings.push(`CT for ${ct.domain}: ${ct.summary}`);
+    }
+    if (ctLookup.whyPoint) why_points.push(ctLookup.whyPoint);
+    if (ctLookup.nextStep && next_steps.length < 6 && !next_steps.includes(ctLookup.nextStep)) {
+      next_steps.push(ctLookup.nextStep);
+    }
+    if (ct.available) {
+      summaryParts.push(`Certificate history: ${ct.interpretation}`);
+    }
+
     return {
       risk_score: score,
       risk_level: level,
@@ -2684,5 +2697,6 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       rdap,
       dns,
       safe_browsing: safeBrowsing,
+      ct,
     };
   });
