@@ -579,6 +579,17 @@ function Index() {
               </div>
             )}
           </ResultCard>
+
+          <ResultCard
+            icon={<CalendarClock className="h-4 w-4" />}
+            title="Domain registration"
+            description="When the recruiter's email domain was registered, and what that means. Powered by RDAP."
+            full
+            loading={loading}
+            hasData={!!result}
+          >
+            {result && <RdapCardBody rdap={result.rdap} />}
+          </ResultCard>
         </section>
 
         <footer className="mt-16 border-t border-border/60 pt-8 pb-6 text-center text-sm text-muted-foreground">
