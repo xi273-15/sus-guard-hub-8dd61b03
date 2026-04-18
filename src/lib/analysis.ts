@@ -64,6 +64,16 @@ export type DnsResult = {
   error?: string;
 };
 
+export type SafeBrowsingStatus = "flagged" | "not_flagged" | "unknown";
+
+export type SafeBrowsingResult = {
+  checked_url: string | null;
+  safe_browsing_status: SafeBrowsingStatus;
+  safe_browsing_findings: string[]; // e.g. ["MALWARE", "SOCIAL_ENGINEERING"]
+  safe_browsing_summary: string;
+  error?: string;
+};
+
 export type AnalysisResult = {
   risk_score: number;
   risk_level: RiskLevel;
@@ -77,6 +87,7 @@ export type AnalysisResult = {
   osint_links: OsintLink[];
   rdap: RdapResult;
   dns: DnsResult;
+  safe_browsing: SafeBrowsingResult;
 };
 
 type SignalKind = "scam" | "caution" | "positive";
