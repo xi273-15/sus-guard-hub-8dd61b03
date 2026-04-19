@@ -3801,7 +3801,11 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
 
     const domainIsNegative =
       domainCheck.status === "mismatch" || domainCheck.status === "lookalike" || domainCheck.status === "public_email";
-    const domainIsPositive = domainCheck.status === "match" || domainCheck.status === "subdomain";
+    const domainIsPositive =
+      domainCheck.status === "match" ||
+      domainCheck.status === "subdomain" ||
+      domainCheck.status === "affiliated";
+    const domainIsAffiliated = domainCheck.status === "affiliated";
 
     const findings: string[] = [];
     if (domainIsNegative && domainCheck.finding) findings.push(domainCheck.finding);
