@@ -200,7 +200,7 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "urgency",
     kind: "scam",
-    weight: 12,
+    weight: 10,
     finding: "Message uses urgency language (e.g. 'urgent', 'immediately', 'asap').",
     reason: "Scammers pressure targets to act fast so there is no time to verify the offer.",
     next_step: "Slow down. Legitimate recruiters are fine with you taking time to verify them.",
@@ -211,7 +211,7 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "offplatform",
     kind: "scam",
-    weight: 18,
+    weight: 20,
     finding: "Message asks you to move the conversation to Telegram, WhatsApp, or Signal.",
     reason:
       "Real recruiters interview on company tools (Zoom, Teams, Google Meet). Off-platform chats hide the scammer's identity.",
@@ -223,7 +223,7 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "payment",
     kind: "scam",
-    weight: 20,
+    weight: 35,
     finding: "Message requests a payment, fee, or deposit from you.",
     reason: "Real employers never ask candidates to pay for a job, training, or onboarding.",
     next_step: "Do not send any money. Any request for payment from a recruiter is a scam.",
@@ -243,7 +243,7 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "check_equipment",
     kind: "scam",
-    weight: 22,
+    weight: 35,
     finding: "Message mentions cashing a check or buying equipment with funds you'll be sent.",
     reason: "This is the classic fake-check scam: the check bounces after you've already spent or forwarded the money.",
     next_step: "Do not deposit any check from this recruiter or buy equipment with funds they send you.",
@@ -265,7 +265,7 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "gift_crypto",
     kind: "scam",
-    weight: 22,
+    weight: 40,
     finding: "Message mentions gift cards or cryptocurrency payments.",
     reason: "No legitimate employer pays salary or expenses in gift cards or crypto. This is a strong scam indicator.",
     next_step: "Do not buy gift cards or send crypto. Cut off contact if they insist.",
@@ -287,7 +287,7 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "sensitive_docs",
     kind: "scam",
-    weight: 18,
+    weight: 35,
     finding: "Message asks for sensitive personal info (SSN, ID, passport, or bank details) early in the process.",
     reason: "Real employers only collect this after a signed offer through an HR portal — not over chat or email.",
     next_step:
@@ -309,7 +309,7 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "high_pay",
     kind: "scam",
-    weight: 10,
+    weight: 12,
     finding: "Message advertises unusually high pay for limited work.",
     reason: "Suspiciously high compensation is a lure. Real salaries match the role and market.",
     next_step:
@@ -321,7 +321,7 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "no_interview",
     kind: "scam",
-    weight: 12,
+    weight: 14,
     finding: "Message offers a job or next step without any real interview process.",
     reason:
       "Real employers interview candidates. Skipping straight to 'you're hired' or 'send your details' is a scam pattern.",
@@ -340,7 +340,7 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "kindly",
     kind: "scam",
-    weight: 5,
+    weight: 8,
     finding: "Message uses scam-pattern wording like 'kindly'.",
     reason: "On its own this is mild, but 'kindly' combined with other red flags is common in recruiter scams.",
     next_step: "Treat as a minor signal — weigh it together with the other findings.",
