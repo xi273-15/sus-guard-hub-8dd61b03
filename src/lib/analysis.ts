@@ -794,8 +794,8 @@ function analyzeDomainAlignment(
       reason:
         "Real recruiters almost always email from their company domain. A Gmail/Outlook/Yahoo address for a corporate role is a meaningful red flag.",
       next_step: `Ask for an email on @${companyRoot} before sharing anything personal. If they refuse, treat the contact as suspicious.`,
-      scoreDelta: 28,
-      floor: 35,
+      scoreDelta: 22,
+      floor: 25,
     };
   }
 
@@ -812,7 +812,7 @@ function analyzeDomainAlignment(
         "When the sender's domain aligns with the company they claim to represent, it's consistent with legitimate recruiter outreach.",
       next_step:
         "Domain alignment is a good sign, but still verify the recruiter on the company's official careers or LinkedIn page.",
-      scoreDelta: -10,
+      scoreDelta: exact ? -8 : -6,
       floor: 0,
     };
   }
@@ -826,8 +826,8 @@ function analyzeDomainAlignment(
       reason:
         "Lookalike domains (extra words, hyphens, or 1–2 character typos of the real company domain) are a classic impersonation tactic. A polished message does not change this.",
       next_step: `Do not reply on this address. Verify the recruiter through the official ${companyRoot} careers page or LinkedIn, and only respond to a genuine @${companyRoot} address.`,
-      scoreDelta: 45,
-      floor: 55,
+      scoreDelta: 32,
+      floor: 40,
     };
   }
 
@@ -839,8 +839,8 @@ function analyzeDomainAlignment(
     reason:
       "When the sender's domain is unrelated to the company they claim to represent, it often indicates impersonation or a scam recruiter using an unrelated address. A professional-sounding message does not cancel this out.",
     next_step: `Don't share personal info. Verify the recruiter through the official ${companyRoot} careers page or LinkedIn before replying.`,
-    scoreDelta: 35,
-    floor: 35,
+    scoreDelta: 28,
+    floor: 30,
   };
 }
 
