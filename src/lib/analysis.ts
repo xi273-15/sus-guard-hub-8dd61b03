@@ -712,7 +712,14 @@ function rootDomain(host: string): string {
   return lastTwo;
 }
 
-type DomainStatus = "match" | "subdomain" | "mismatch" | "lookalike" | "public_email" | "unverifiable";
+type DomainStatus =
+  | "match"
+  | "subdomain"
+  | "affiliated"
+  | "mismatch"
+  | "lookalike"
+  | "public_email"
+  | "unverifiable";
 
 type DomainCheck = {
   status: DomainStatus;
@@ -757,6 +764,100 @@ function isLookalike(senderRoot: string, companyRoot: string): boolean {
   // Close typo (1-2 char edits) on a reasonably long name
   const dist = editDistance(sName, cName);
   if (cName.length >= 5 && dist > 0 && dist <= 2) return true;
+  return false;
+}
+
+// Effective TLD (eTLD): last 2 labels for known multi-part TLDs, otherwise last label.
+function effectiveTld(host: string): string {
+  const parts = host.split(".");
+  if (parts.length < 2) return host;
+  const lastTwo = parts.slice(-2).join(".");
+  if (MULTI_PART_TLDS.has(lastTwo)) return lastTwo;
+  return parts[parts.length - 1];
+}
+
+// Institutional/government TLDs where shared TLD + label overlap is strong
+// evidence of an organization family (e.g. brooklyn.cuny.edu vs brooklyn.edu).
+const INSTITUTIONAL_TLDS = new Set([
+  "edu",
+  "gov",
+  "mil",
+  "ac.uk",
+  "gov.uk",
+  "edu.au",
+  "gov.au",
+  "ac.jp",
+  "go.jp",
+  "ac.nz",
+  "govt.nz",
+  "ac.in",
+  "gov.in",
+  "edu.sg",
+  "gov.sg",
+]);
+
+/**
+ * Detects affiliated / same-organization-family domains, e.g.
+ *   brooklyn.cuny.edu  ↔ brooklyn.edu       (institutional TLD + shared label)
+ *   jjay.cuny.edu      ↔ careers.cuny.edu   (shared multi-label suffix)
+ *   careers.acme.co.uk ↔ acme.co.uk         (handled earlier as subdomain)
+ *
+ * Strict rules — both must hold:
+ *  1. The two domains share the SAME effective TLD (no .edu→.com swap).
+ *  2. Either:
+ *     a) Both share a non-trivial multi-label suffix beyond the eTLD (e.g.
+ *        both end in `cuny.edu`), OR
+ *     b) The eTLD is institutional (.edu/.gov/.mil/.ac.uk/etc.) AND the
+ *        primary label of one root appears as a label inside the other's
+ *        full hostname (e.g. `brooklyn` label matches across both).
+ *
+ * Returns false for lookalikes and unrelated domains. Visual similarity
+ * alone never qualifies as affiliation.
+ */
+function isAffiliated(
+  senderHost: string,
+  companyHost: string,
+  senderRoot: string,
+  companyRoot: string,
+): boolean {
+  if (!senderHost || !companyHost) return false;
+  if (senderRoot === companyRoot) return false; // already handled as match/subdomain
+
+  const sTld = effectiveTld(senderHost);
+  const cTld = effectiveTld(companyHost);
+  if (sTld !== cTld) return false; // TLD swap (.edu → .com) is never affiliation
+
+  const sParts = senderHost.split(".");
+  const cParts = companyHost.split(".");
+
+  // Rule 2a: shared multi-label suffix beyond the eTLD.
+  // e.g. jjay.cuny.edu and careers.cuny.edu both end in "cuny.edu".
+  const tldDepth = sTld.split(".").length;
+  // Try suffix of length tldDepth+1 first (one org label above the TLD).
+  if (sParts.length >= tldDepth + 1 && cParts.length >= tldDepth + 1) {
+    const sSuffix = sParts.slice(-(tldDepth + 1)).join(".");
+    const cSuffix = cParts.slice(-(tldDepth + 1)).join(".");
+    if (sSuffix === cSuffix) {
+      // Shared suffix like "cuny.edu" — but only if the shared org label is
+      // non-generic (avoid trivial labels like "co", "com", "www").
+      const sharedLabel = sParts[sParts.length - tldDepth - 1];
+      if (sharedLabel && sharedLabel.length >= 3 && !["www", "mail", "smtp"].includes(sharedLabel)) {
+        return true;
+      }
+    }
+  }
+
+  // Rule 2b: institutional TLD + label overlap across hostnames.
+  // e.g. brooklyn.cuny.edu (labels: brooklyn, cuny, edu) and brooklyn.edu
+  //      (labels: brooklyn, edu) share the label "brooklyn" with same .edu TLD.
+  if (INSTITUTIONAL_TLDS.has(sTld)) {
+    const sLabels = new Set(sParts.slice(0, -tldDepth).filter((l) => l.length >= 4));
+    const cLabels = new Set(cParts.slice(0, -tldDepth).filter((l) => l.length >= 4));
+    for (const label of sLabels) {
+      if (cLabels.has(label)) return true;
+    }
+  }
+
   return false;
 }
 
@@ -813,6 +914,25 @@ function analyzeDomainAlignment(
       next_step:
         "Domain alignment is a good sign, but still verify the recruiter on the company's official careers or LinkedIn page.",
       scoreDelta: exact ? -8 : -6,
+      floor: 0,
+    };
+  }
+
+  // Affiliated / same-organization-family check runs BEFORE lookalike so that
+  // legitimate institutional pairs like brooklyn.cuny.edu ↔ brooklyn.edu are
+  // not misclassified. Lookalikes that swap the TLD (e.g. brooklyn.cuny.com)
+  // will fail the eTLD check inside isAffiliated and fall through to lookalike.
+  if (isAffiliated(senderDomain, companyDomain, senderRoot, companyRoot)) {
+    return {
+      status: "affiliated",
+      senderDomain,
+      companyDomain,
+      finding: `Recruiter email domain (${senderDomain}) is not identical to the public website domain (${companyDomain}), but it appears to belong to the same institutional/organization family.`,
+      reason:
+        "The two domains share the same top-level domain and a recognizable institutional root, which is a common pattern for legitimate departments, campuses, or member institutions of a larger organization.",
+      next_step:
+        "Treat this as a neutral signal: still confirm the recruiter on the official organization website or directory before sharing personal information.",
+      scoreDelta: -2,
       floor: 0,
     };
   }
@@ -3681,7 +3801,11 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
 
     const domainIsNegative =
       domainCheck.status === "mismatch" || domainCheck.status === "lookalike" || domainCheck.status === "public_email";
-    const domainIsPositive = domainCheck.status === "match" || domainCheck.status === "subdomain";
+    const domainIsPositive =
+      domainCheck.status === "match" ||
+      domainCheck.status === "subdomain" ||
+      domainCheck.status === "affiliated";
+    const domainIsAffiliated = domainCheck.status === "affiliated";
 
     const findings: string[] = [];
     if (domainIsNegative && domainCheck.finding) findings.push(domainCheck.finding);
@@ -3728,6 +3852,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     let why_it_matters = buildWhyItMatters(level, matchedScam.length, matchedCaution.length, matchedPositive.length);
     if (domainIsNegative) {
       why_it_matters = `${domainCheck.reason} A polished, professional-sounding message does not cancel a sender/company domain mismatch — scammers can and do write normal-sounding outreach. ${why_it_matters}`;
+    } else if (domainIsAffiliated) {
+      why_it_matters = `${why_it_matters} On the identity side, the sender's email domain isn't identical to the public website, but it appears to belong to the same institutional/organization family — no clear impersonation signal from this domain relationship.`;
     } else if (domainIsPositive) {
       why_it_matters = `${why_it_matters} On the identity side, the sender's email domain aligns with the claimed company, which is consistent with legitimate outreach.`;
     } else if (domainCheck.status === "unverifiable" && (data.recruiterEmail || data.companyDomain)) {
@@ -3967,7 +4093,13 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
 
     // 3. Brief reassuring signals — one short line, no detail.
     const reassures: string[] = [];
-    if (domainIsPositive) reassures.push("the sender's email domain matches the claimed company");
+    if (domainIsPositive) {
+      reassures.push(
+        domainIsAffiliated
+          ? "the sender's email domain appears affiliated with the claimed organization"
+          : "the sender's email domain matches the claimed company",
+      );
+    }
     if (matchedPositive.length && !matchedScam.length)
       reassures.push("the message itself does not contain obvious scam wording");
     if (wayback.archive_history_status === "established") reassures.push("the website appears established");
