@@ -984,6 +984,13 @@ type OsintInternal = {
   floor: number;
   whyPoints: WhyPoint[];
   nextSteps: string[];
+  /**
+   * True when the only OSINT scam evidence is general "this real org is
+   * sometimes impersonated" warnings — NOT direct fraud reports against the
+   * specific recruiter, domain, or company. The main scoring layer treats
+   * this as a mild caution rather than a strong red flag.
+   */
+  impersonationOnly: boolean;
 };
 
 const SCAM_KEYWORDS = [
@@ -1072,6 +1079,7 @@ async function runTavilyOsint(input: {
       floor: 0,
       whyPoints: [],
       nextSteps: [],
+      impersonationOnly: false,
     };
   }
 
@@ -1088,6 +1096,7 @@ async function runTavilyOsint(input: {
       floor: 0,
       whyPoints: [],
       nextSteps: [],
+      impersonationOnly: false,
     };
   }
 
@@ -1285,10 +1294,15 @@ async function runTavilyOsint(input: {
         nextSteps.push(
           `Do not share personal or financial information until you've confirmed this recruiter genuinely works at ${ps.subject}.`,
         );
-        // Multi-hit impersonation warnings (3+) are a clear pattern, not noise.
-        scoreDelta += Math.min(20, 6 + ps.count * 2);
-        if (ps.count >= 3) floor = Math.max(floor, 30);
-        else floor = Math.max(floor, 20);
+        // Institution-level impersonation warnings about a real organization
+        // are a mild-to-moderate caution signal, NOT a major risk signal by
+        // default. They mean "this real org is sometimes impersonated by
+        // scammers" — not "this specific outreach is fraudulent". Keep both
+        // the score nudge and floor modest so they cannot single-handedly
+        // push a legitimate-looking case into High Risk.
+        scoreDelta += Math.min(10, 3 + ps.count);
+        if (ps.count >= 3) floor = Math.max(floor, 15);
+        else floor = Math.max(floor, 10);
       } else {
         // No legitimacy signals AND a company-name scam hit — stronger signal.
         findings.push(
@@ -1366,12 +1380,22 @@ async function runTavilyOsint(input: {
     );
   }
 
+  // "Impersonation only" = the only OSINT scam evidence was company-name
+  // impersonation warnings about a real org (no direct domain/recruiter fraud
+  // reports). Main scoring uses this to avoid treating it as a strong red flag.
+  const impersonationOnly =
+    looksLikeRealOrg &&
+    companyScamHits > 0 &&
+    domainScamHits === 0 &&
+    recruiterScamHits === 0;
+
   return {
     result: { summary, findings, links: dedupeLinks(allLinks) },
     scoreDelta,
     floor,
     whyPoints,
     nextSteps,
+    impersonationOnly,
   };
 }
 
@@ -3740,7 +3764,10 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
 
     // Cap how much positive wording can lower the score. Strong red flags
     // (high-weight scam signals or domain mismatch/lookalike/public_email)
-    // must not be neutralized by a polished message.
+    // must not be neutralized by a polished message. NOTE: institution-level
+    // impersonation warnings (osint.impersonationOnly) are NOT a strong red
+    // flag — they describe risk to the org, not to this specific outreach.
+    const hasStrongOsintRedFlag = osint.floor >= 25 && !osint.impersonationOnly;
     const hasStrongRedFlag =
       matchedScam.some((s) => s.weight >= 20) ||
       domainCheck.status === "mismatch" ||
@@ -3749,10 +3776,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       headerAuth.dmarc === "fail" ||
       headerAuth.spf === "fail" ||
       headerAuth.dkim === "fail" ||
-      // OSINT scam evidence (direct fraud reports, multi-hit impersonation
-      // warnings, recruiter-name complaints) is also a strong red flag —
-      // a polished message must not be allowed to neutralize it.
-      osint.floor >= 25 ||
+      hasStrongOsintRedFlag ||
       safeBrowsingLookup.floor >= 30;
     const positiveCap = hasStrongRedFlag ? 4 : 12;
     const positiveDeduction = Math.min(positiveScore, positiveCap);
@@ -3762,6 +3786,34 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       score -= 4;
     }
 
+    // Extra "specific outreach looks legitimate" credit. When the recruiter
+    // is publicly tied to the org, the sender domain is the company's (or an
+    // affiliated institutional domain), the message is clean, auth doesn't
+    // fail, and infrastructure is normal — positive identity signals should
+    // outweigh general "this org is sometimes impersonated" warnings.
+    const recruiterTiedToOrg =
+      osint.result.findings.some((f) => /connect|link/i.test(f)) ||
+      // consistencyHits / recruiterLegitHits aren't exposed; use a proxy:
+      osint.result.summary.toLowerCase().includes("consistent with a real recruiter");
+    const cleanIdentity =
+      (domainCheck.status === "match" ||
+        domainCheck.status === "subdomain" ||
+        domainCheck.status === "affiliated") &&
+      matchedScam.length === 0 &&
+      headerAuth.dmarc !== "fail" &&
+      headerAuth.spf !== "fail" &&
+      headerAuth.dkim !== "fail" &&
+      safeBrowsingLookup.floor === 0 &&
+      (rdapLookup.result.ageBucket === "established" ||
+        rdapLookup.result.ageBucket === "young" ||
+        rdapLookup.result.ageBucket === "unknown") &&
+      (waybackLookup.result.archive_history_status === "established" ||
+        waybackLookup.result.archive_history_status === "moderate" ||
+        waybackLookup.result.archive_history_status === "unknown");
+    if (cleanIdentity && (recruiterTiedToOrg || matchedPositive.length >= 2)) {
+      score -= 6;
+    }
+
     // ---------- Combo floors ----------
     if (hasMoneyAsk) score = Math.max(score, 55);
     if (hasSensitiveAsk) score = Math.max(score, 55);
@@ -3769,7 +3821,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (isPublicEmail && hasOsintScam) score = Math.max(score, 40);
     if (headerAuth.dmarc === "fail" && isDomainMismatch) score = Math.max(score, 35);
     if (hasLookalike) score = Math.max(score, 40);
-    if (osint.floor >= 45) score = Math.max(score, 45);
+    if (osint.floor >= 45 && !osint.impersonationOnly) score = Math.max(score, 45);
 
     // Enforce domain-driven minimum risk floor.
     if (domainCheck.floor > 0) {
@@ -4066,9 +4118,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       concernLines.push(
         "Main concern: public web reports include direct scam complaints tied to this exact recruiter, domain, or company.",
       );
-    } else if (osint.floor >= 25) {
+    } else if (osint.floor >= 25 && !osint.impersonationOnly) {
       concernLines.push(
-        "Main concern: public web evidence includes scam-related mentions or impersonation warnings worth reviewing before trusting this outreach.",
+        "Main concern: public web evidence includes scam-related mentions worth reviewing before trusting this outreach.",
       );
     } else if (domainIsNegative && domainCheck.finding) {
       concernLines.push(`Main concern: ${domainCheck.finding.replace(/\.$/, "")}.`);
@@ -4077,15 +4129,21 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       concernLines.push(`Main concern: ${top.charAt(0).toLowerCase() + top.slice(1)}.`);
     } else if (safeBrowsing.safe_browsing_status === "flagged") {
       concernLines.push("Main concern: this site is flagged by Safe Browsing as unsafe.");
+    } else if (osint.impersonationOnly) {
+      // Institution-level impersonation warnings: calm, factual framing.
+      concernLines.push(
+        "Worth noting: this organization is known to be impersonated by scammers in the past, so basic verification of the recruiter is still wise.",
+      );
     } else if (matchedCaution.length) {
       const top = matchedCaution[0].finding.replace(/\.$/, "");
       concernLines.push(`Worth a second look: ${top.charAt(0).toLowerCase() + top.slice(1)}.`);
     }
 
     // 2. One brief secondary concern, if distinct from the lead.
-    if (concernLines.length && osint.floor >= 25 && domainIsNegative && domainCheck.finding) {
+    const osintSecondaryConcern = osint.floor >= 25 && !osint.impersonationOnly;
+    if (concernLines.length && osintSecondaryConcern && domainIsNegative && domainCheck.finding) {
       concernLines.push(`The sender's domain also raises a flag: ${domainCheck.finding.replace(/\.$/, "")}.`);
-    } else if (concernLines.length && matchedScam.length && osint.floor >= 25) {
+    } else if (concernLines.length && matchedScam.length && osintSecondaryConcern) {
       concernLines.push(
         `The message itself also contains scam-pattern wording (${matchedScam[0].finding.replace(/\.$/, "").toLowerCase()}).`,
       );
@@ -4115,14 +4173,19 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (level === "Likely Scam") {
       bottomLine = "Bottom line: treat this as a likely scam and do not engage further until you can independently verify the sender.";
     } else if (level === "High") {
-      bottomLine = "Bottom line: this carries meaningful risk — verify the recruiter through official channels before sharing anything.";
+      bottomLine = osint.impersonationOnly && !matchedScam.length && !domainIsNegative
+        ? "Bottom line: this outreach itself looks mostly legitimate, but because the institution is sometimes impersonated, verify the recruiter through official channels before sharing anything."
+        : "Bottom line: this carries meaningful risk — verify the recruiter through official channels before sharing anything.";
     } else if (level === "Caution") {
-      bottomLine =
-        osint.floor >= 25
+      bottomLine = osint.impersonationOnly
+        ? "Bottom line: we did not find strong evidence that this specific recruiter is fake, but it is wise to verify through official channels because the institution has been used in impersonation scams."
+        : osint.floor >= 25
           ? "Bottom line: this isn't an obvious fake, but the public warning context is enough that the recruiter should be verified carefully before continuing."
           : "Bottom line: not clearly a scam, but verify the recruiter before sharing anything personal.";
     } else {
-      bottomLine = "Bottom line: no obvious red flags, but a quick verification through the official company site is still wise before sharing personal info.";
+      bottomLine = osint.impersonationOnly
+        ? "Bottom line: this outreach appears mostly legitimate, but the organization is known to be impersonated sometimes, so basic verification is still recommended."
+        : "Bottom line: no obvious red flags, but a quick verification through the official company site is still wise before sharing personal info.";
     }
 
     // If literally nothing concerning surfaced, lead with a calm one-liner.
