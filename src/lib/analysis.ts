@@ -219,7 +219,8 @@ const SCAM_SIGNALS: Signal[] = [
     kind: "scam",
     weight: 35,
     finding: "Message requests a payment, fee, or deposit from you.",
-    reason: "Real employers never ask candidates to pay for a job, training, or onboarding. This is one of the strongest scam patterns.",
+    reason:
+      "Real employers never ask candidates to pay for a job, training, or onboarding. This is one of the strongest scam patterns.",
     next_step: "Do not send money or pay any fee. Any request for payment from a recruiter is a scam.",
     test: (l) =>
       hasAny(l, [
@@ -248,7 +249,8 @@ const SCAM_SIGNALS: Signal[] = [
     weight: 38,
     finding: "Message mentions cashing a check or buying equipment with funds you'll be sent.",
     reason: "This is the classic fake-check scam: the check bounces after you've already spent or forwarded the money.",
-    next_step: "Do not cash checks or purchase equipment for a recruiter. The check will bounce after you've spent the money.",
+    next_step:
+      "Do not cash checks or purchase equipment for a recruiter. The check will bounce after you've spent the money.",
     test: (l) =>
       hasAny(l, [
         "cash the check",
@@ -723,9 +725,21 @@ type DomainStatus = "match" | "subdomain" | "affiliated" | "mismatch" | "lookali
 // (e.g. "brooklyn") between sender root and company root strongly suggests
 // the same organization family rather than a coincidence.
 const INSTITUTIONAL_TLDS = new Set([
-  "edu", "gov", "mil",
-  "ac.uk", "gov.uk", "edu.au", "gov.au", "ac.jp", "go.jp",
-  "edu.sg", "gov.sg", "edu.in", "gov.in", "edu.cn", "gov.cn",
+  "edu",
+  "gov",
+  "mil",
+  "ac.uk",
+  "gov.uk",
+  "edu.au",
+  "gov.au",
+  "ac.jp",
+  "go.jp",
+  "edu.sg",
+  "gov.sg",
+  "edu.in",
+  "gov.in",
+  "edu.cn",
+  "gov.cn",
 ]);
 
 function publicSuffix(host: string): string {
@@ -747,12 +761,7 @@ function isInstitutionalTld(host: string): boolean {
 // Detect "same organization family" relationships, e.g. brooklyn.edu vs
 // brooklyn.cuny.edu, where a shared distinctive single-label name appears
 // in both hosts under trusted institutional TLDs.
-function isLikelyAffiliated(
-  senderHost: string,
-  senderRoot: string,
-  companyHost: string,
-  companyRoot: string,
-): boolean {
+function isLikelyAffiliated(senderHost: string, senderRoot: string, companyHost: string, companyRoot: string): boolean {
   if (!senderHost || !companyHost) return false;
   if (senderRoot === companyRoot) return false; // already a match/subdomain
   // Both must live under trusted institutional/governmental suffixes —
@@ -764,9 +773,28 @@ function isLikelyAffiliated(
   const companyLabels = companyHost.split(".");
   // Shared distinctive label (length >= 4, not a generic word) appearing in both.
   const generic = new Set([
-    "mail", "email", "www", "web", "info", "news", "home", "main",
-    "office", "admin", "user", "users", "dept", "department", "school",
-    "college", "university", "edu", "gov", "org", "com", "net",
+    "mail",
+    "email",
+    "www",
+    "web",
+    "info",
+    "news",
+    "home",
+    "main",
+    "office",
+    "admin",
+    "user",
+    "users",
+    "dept",
+    "department",
+    "school",
+    "college",
+    "university",
+    "edu",
+    "gov",
+    "org",
+    "com",
+    "net",
   ]);
   for (const label of senderLabels) {
     if (label.length < 4) continue;
@@ -886,8 +914,7 @@ function analyzeDomainAlignment(
     // that shares the brand name. This is a classic impersonation pattern.
     const senderSuffix = publicSuffix(senderDomain);
     const companySuffix = publicSuffix(companyDomain);
-    const commercialSubstitution =
-      INSTITUTIONAL_TLDS.has(companySuffix) && !INSTITUTIONAL_TLDS.has(senderSuffix);
+    const commercialSubstitution = INSTITUTIONAL_TLDS.has(companySuffix) && !INSTITUTIONAL_TLDS.has(senderSuffix);
     return {
       status: "lookalike",
       senderDomain,
@@ -1141,7 +1168,8 @@ async function runTavilyOsint(input: {
   // Direct accusation patterns — a public article title or snippet directly
   // calling the subject (company, recruiter, or domain) a scam/fraud.
   // These are stronger than generic "may be impersonated" warnings.
-  const DIRECT_ACCUSATION = /\b(scam company|fraud company|scam job|fake recruiter|fake job|is a scam|is a fraud|avoid this company|scam alert|scam warning|reported as scam|fraudulent company|known scam|confirmed scam)\b/i;
+  const DIRECT_ACCUSATION =
+    /\b(scam company|fraud company|scam job|fake recruiter|fake job|is a scam|is a fraud|avoid this company|scam alert|scam warning|reported as scam|fraudulent company|known scam|confirmed scam)\b/i;
 
   for (const ps of pendingScams) {
     const isDomainScam = ps.kind === "domain_scam";
@@ -1153,7 +1181,8 @@ async function runTavilyOsint(input: {
     const directAccusations = ps.matches.filter((r) => {
       const title = (r.title ?? "").toLowerCase();
       const snippet = (r.content ?? "").toLowerCase();
-      const titleMentionsSubject = title.includes(subjectLc) || (isDomainScam && title.includes(subjectLc.split(".")[0]));
+      const titleMentionsSubject =
+        title.includes(subjectLc) || (isDomainScam && title.includes(subjectLc.split(".")[0]));
       const snippetMentionsSubject = snippet.includes(subjectLc);
       const titleAccusation = DIRECT_ACCUSATION.test(title);
       const snippetAccusation = DIRECT_ACCUSATION.test(snippet);
@@ -1177,8 +1206,12 @@ async function runTavilyOsint(input: {
         `Open and read the linked scam reports about ${ps.subject} before replying or sharing any information.`,
       );
       // Strong score bump — domain-level direct accusations are the heaviest.
-      scoreDelta += isDomainScam ? Math.min(45, 25 + directAccusations.length * 5) : Math.min(35, 18 + directAccusations.length * 4);
-      directAccusations.slice(0, 3).forEach((r) => allLinks.push({ title: r.title ?? r.url ?? "Result", url: r.url ?? "" }));
+      scoreDelta += isDomainScam
+        ? Math.min(45, 25 + directAccusations.length * 5)
+        : Math.min(35, 18 + directAccusations.length * 4);
+      directAccusations
+        .slice(0, 3)
+        .forEach((r) => allLinks.push({ title: r.title ?? r.url ?? "Result", url: r.url ?? "" }));
       // Skip the impersonation/soft-framing branches below for this subject.
       continue;
     }
@@ -1444,10 +1477,7 @@ async function fetchRdap(domain: string): Promise<RdapDomainResponse | null> {
   }
 }
 
-async function runRdapLookup(input: {
-  recruiterEmail?: string;
-  companyName?: string;
-}): Promise<{
+async function runRdapLookup(input: { recruiterEmail?: string; companyName?: string }): Promise<{
   result: RdapResult;
   scoreDelta: number;
   floor: number;
@@ -1627,10 +1657,7 @@ function stripQuotes(s: string): string {
   return s.replace(/"\s*"/g, "").replace(/^"|"$/g, "");
 }
 
-async function runDnsLookup(input: {
-  recruiterEmail?: string;
-  companyName?: string;
-}): Promise<{
+async function runDnsLookup(input: { recruiterEmail?: string; companyName?: string }): Promise<{
   result: DnsResult;
   scoreDelta: number;
   floor: number;
@@ -1650,7 +1677,7 @@ async function runDnsLookup(input: {
       nextStep: null,
     };
   }
-
+  //lines below were edited by ceen gabbai
   const lookupDomain = rootDomain(senderDomain);
 
   const [mxAns, txtAns, aAns, aaaaAns, dmarcAns] = await Promise.all([
@@ -2198,7 +2225,7 @@ async function runCtLookup(input: { recruiterEmail?: string }): Promise<{
     nextStep,
   };
 }
-
+//lines below were edited by ceen gabbai
 // ---------- Wayback Machine (Internet Archive) ----------
 function emptyWayback(checkedUrl: string | null, summary: string, error?: string): WaybackResult {
   return {
@@ -3836,14 +3863,14 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (paymentMatches.some((m) => m.id === "check_equipment")) kinds.push("cashing checks or buying equipment");
       if (paymentMatches.some((m) => m.id === "gift_crypto")) kinds.push("gift cards or crypto");
       if (paymentMatches.some((m) => m.id === "sensitive_docs")) kinds.push("sensitive personal or financial details");
-      summaryParts.push(
-        `⚠️ This message asks for ${kinds.join(" / ")}, which legitimate recruiters do not do.`,
-      );
+      summaryParts.push(`⚠️ This message asks for ${kinds.join(" / ")}, which legitimate recruiters do not do.`);
     }
 
     // Priority 2: direct public scam evidence about this exact subject.
     if (directScamFinding) {
-      summaryParts.push(`⚠️ Public reports directly describe this company or recruiter as a scam — open the linked sources before responding.`);
+      summaryParts.push(
+        `⚠️ Public reports directly describe this company or recruiter as a scam — open the linked sources before responding.`,
+      );
     }
 
     // Priority 3: identity / domain deception (only the strongest cases).
@@ -3878,24 +3905,30 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     } else {
       // Even with danger present, briefly acknowledge legit-looking signals
       // so users don't dismiss the warning as obviously bogus.
-      if (
-        matchedPositive.length > 0 ||
-        domainIsPositive ||
-        wayback.archive_history_status === "established"
-      ) {
-        summaryParts.push("Some details look legitimate, but legitimate-looking accounts can still be hacked or impersonated.");
+      if (matchedPositive.length > 0 || domainIsPositive || wayback.archive_history_status === "established") {
+        summaryParts.push(
+          "Some details look legitimate, but legitimate-looking accounts can still be hacked or impersonated.",
+        );
       }
     }
 
     // Bottom line: one short closing sentence.
     if (paymentMatches.length || matchedScam.length >= 2) {
-      summaryParts.push("Bottom line: do not send money or share sensitive details, and verify the recruiter independently before continuing.");
+      summaryParts.push(
+        "Bottom line: do not send money or share sensitive details, and verify the recruiter independently before continuing.",
+      );
     } else if (directScamFinding || level === "Likely Scam" || level === "High") {
-      summaryParts.push("Bottom line: read the linked sources and verify the recruiter through official channels before responding.");
+      summaryParts.push(
+        "Bottom line: read the linked sources and verify the recruiter through official channels before responding.",
+      );
     } else if (level === "Caution") {
-      summaryParts.push("Bottom line: proceed carefully and verify the recruiter through the official company website before sharing anything.");
+      summaryParts.push(
+        "Bottom line: proceed carefully and verify the recruiter through the official company website before sharing anything.",
+      );
     } else {
-      summaryParts.push("Bottom line: this looks mostly legitimate, but a quick verification through official channels is still wise.");
+      summaryParts.push(
+        "Bottom line: this looks mostly legitimate, but a quick verification through official channels is still wise.",
+      );
     }
 
     // Build per-finding "why this matters" bullets so the user gets a clean,
