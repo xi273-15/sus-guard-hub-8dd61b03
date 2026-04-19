@@ -194,18 +194,18 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "urgency",
     kind: "scam",
-    weight: 12,
+    weight: 14,
     finding: "Message uses urgency language (e.g. 'urgent', 'immediately', 'asap').",
     reason: "Scammers pressure targets to act fast so there is no time to verify the offer.",
     next_step: "Slow down. Legitimate recruiters are fine with you taking time to verify them.",
     test: (l) =>
-      hasWord(l, ["urgent", "urgently", "immediately", "asap"]) ||
+      hasWord(l, ["urgent", "urgently", "immediately", "asap", "today"]) ||
       hasAny(l, ["as soon as possible", "right away", "act now", "act fast"]),
   },
   {
     id: "offplatform",
     kind: "scam",
-    weight: 18,
+    weight: 20,
     finding: "Message asks you to move the conversation to Telegram, WhatsApp, or Signal.",
     reason:
       "Real recruiters interview on company tools (Zoom, Teams, Google Meet). Off-platform chats hide the scammer's identity.",
@@ -217,30 +217,38 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "payment",
     kind: "scam",
-    weight: 20,
+    weight: 35,
     finding: "Message requests a payment, fee, or deposit from you.",
-    reason: "Real employers never ask candidates to pay for a job, training, or onboarding.",
-    next_step: "Do not send any money. Any request for payment from a recruiter is a scam.",
+    reason: "Real employers never ask candidates to pay for a job, training, or onboarding. This is one of the strongest scam patterns.",
+    next_step: "Do not send money or pay any fee. Any request for payment from a recruiter is a scam.",
     test: (l) =>
       hasAny(l, [
         "send payment",
+        "send money",
         "pay a fee",
+        "pay the fee",
+        "application fee",
         "processing fee",
         "registration fee",
         "training fee",
         "onboarding fee",
+        "security deposit",
+        "refundable deposit",
         "wire transfer",
         "western union",
         "moneygram",
+        "zelle",
+        "venmo",
+        "cash app",
       ]),
   },
   {
     id: "check_equipment",
     kind: "scam",
-    weight: 22,
+    weight: 38,
     finding: "Message mentions cashing a check or buying equipment with funds you'll be sent.",
     reason: "This is the classic fake-check scam: the check bounces after you've already spent or forwarded the money.",
-    next_step: "Do not deposit any check from this recruiter or buy equipment with funds they send you.",
+    next_step: "Do not cash checks or purchase equipment for a recruiter. The check will bounce after you've spent the money.",
     test: (l) =>
       hasAny(l, [
         "cash the check",
@@ -254,12 +262,14 @@ const SCAM_SIGNALS: Signal[] = [
         "purchase a laptop",
         "home office equipment",
         "office setup",
+        "approved vendor",
+        "preferred vendor",
       ]),
   },
   {
     id: "gift_crypto",
     kind: "scam",
-    weight: 22,
+    weight: 40,
     finding: "Message mentions gift cards or cryptocurrency payments.",
     reason: "No legitimate employer pays salary or expenses in gift cards or crypto. This is a strong scam indicator.",
     next_step: "Do not buy gift cards or send crypto. Cut off contact if they insist.",
@@ -281,11 +291,11 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "sensitive_docs",
     kind: "scam",
-    weight: 18,
+    weight: 32,
     finding: "Message asks for sensitive personal info (SSN, ID, passport, or bank details) early in the process.",
     reason: "Real employers only collect this after a signed offer through an HR portal — not over chat or email.",
     next_step:
-      "Do not share your SSN, ID, passport, or bank info until you have a verified offer through the official company portal.",
+      "Do not share banking information, your SSN, ID, or passport until you have a verified offer through the official company portal.",
     test: (l) =>
       hasAny(l, [
         "social security",
