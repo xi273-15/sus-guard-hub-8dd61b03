@@ -3788,7 +3788,6 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (
         matchedPositive.length > 0 ||
         domainIsPositive ||
-        domainCheck.status === "affiliated" ||
         wayback.archive_history_status === "established"
       ) {
         summaryParts.push("Some details look legitimate, but legitimate-looking accounts can still be hacked or impersonated.");
