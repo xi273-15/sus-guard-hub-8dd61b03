@@ -1098,6 +1098,7 @@ async function runTavilyOsint(input: {
       nextSteps: [],
       impersonationOnly: false,
     };
+  }
 
   const queries: {
     kind: "consistency" | "recruiter" | "recruiter_scam" | "company_scam" | "domain_scam";
