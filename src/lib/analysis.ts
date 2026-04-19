@@ -3591,7 +3591,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         domainCheck.finding &&
         domainCheck.reason &&
         domainCheck.status !== "match" &&
-        domainCheck.status !== "subdomain"
+        domainCheck.status !== "subdomain" &&
+        domainCheck.status !== "affiliated"
       ) {
         const sev: WhyPoint["severity"] = noMsgNegative
           ? "bad"
@@ -3599,6 +3600,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
             ? "info"
             : "caution";
         noMsgWhyPoints.push({ finding: domainCheck.finding, why: domainCheck.reason, severity: sev });
+      } else if (domainCheck.status === "affiliated" && domainCheck.finding && domainCheck.reason) {
+        noMsgWhyPoints.push({ finding: domainCheck.finding, why: domainCheck.reason, severity: "good" });
       }
       headerAuth.explanations.forEach((e) => noMsgWhyPoints.push(e));
       osint.whyPoints.forEach((p) => noMsgWhyPoints.push(p));
