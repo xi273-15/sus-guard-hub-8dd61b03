@@ -3725,77 +3725,85 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     // paired finding/explanation entries in `header_explanations` so the user
     // gets a clean per-pointer breakdown instead of a wall of text.
 
-    const summaryParts: string[] = [`This recruiter check scored ${score} out of 100, which is ${level}.`];
+    // Build a STRICT short executive-style summary.
+    // Hard rules: max ~6 sentences, lead with biggest danger, no subsystem
+    // dump, no counts, no "why it matters", no next steps. The detailed
+    // panels (Why it matters, Recommended next steps, Detailed signals)
+    // already cover everything else.
+    const summaryParts: string[] = [];
 
-    // Surface payment / check / crypto language at the very top of the summary.
+    // Sentence 1: score + level (one short line, no extras).
+    summaryParts.push(`This recruiter check scored ${score} out of 100, which is ${level}.`);
+
+    // Priority 1: direct payment / check / equipment / sensitive-info scam language.
     const paymentMatches = matchedScam.filter(
       (s) => s.id === "payment" || s.id === "check_equipment" || s.id === "gift_crypto" || s.id === "sensitive_docs",
     );
-    if (paymentMatches.length) {
-      summaryParts.push(
-        `⚠️ This message contains direct payment- or money-related scam language: ${paymentMatches.map((m) => m.finding.replace(/\.$/, "")).join("; ")}. Do not send money, cash checks, buy equipment, or share banking details.`,
-      );
-    }
-    // Surface direct public scam accusations at the top, too.
     const directScamFinding = osint.result.findings.find((f) => /directly describe/i.test(f));
+
+    if (paymentMatches.length) {
+      const kinds: string[] = [];
+      if (paymentMatches.some((m) => m.id === "payment")) kinds.push("payment or fees");
+      if (paymentMatches.some((m) => m.id === "check_equipment")) kinds.push("cashing checks or buying equipment");
+      if (paymentMatches.some((m) => m.id === "gift_crypto")) kinds.push("gift cards or crypto");
+      if (paymentMatches.some((m) => m.id === "sensitive_docs")) kinds.push("sensitive personal or financial details");
+      summaryParts.push(
+        `⚠️ This message asks for ${kinds.join(" / ")}, which legitimate recruiters do not do.`,
+      );
+    }
+
+    // Priority 2: direct public scam evidence about this exact subject.
     if (directScamFinding) {
-      summaryParts.push(`⚠️ ${directScamFinding} We found public reports worth reviewing before trusting this outreach.`);
+      summaryParts.push(`⚠️ Public reports directly describe this company or recruiter as a scam — open the linked sources before responding.`);
     }
-    if (matchedScam.length) {
-      summaryParts.push(
-        `We detected ${matchedScam.length} scam signal${matchedScam.length === 1 ? "" : "s"}: ${matchedScam
-          .map((m) => m.finding.replace(/\.$/, ""))
-          .join("; ")}.`,
-      );
-    } else if (matchedCaution.length) {
-      summaryParts.push(
-        `We didn't find strong scam wording, but ${matchedCaution.length} thing${matchedCaution.length === 1 ? "" : "s"} ${matchedCaution.length === 1 ? "is" : "are"} worth a second look: ${matchedCaution
-          .map((m) => m.finding.replace(/\.$/, ""))
-          .join("; ")}.`,
-      );
+
+    // Priority 3: identity / domain deception (only the strongest cases).
+    if (domainCheck.status === "lookalike") {
+      summaryParts.push("The sender's email domain looks like a deceptive lookalike of the claimed organization.");
+    } else if (domainCheck.status === "mismatch") {
+      summaryParts.push("The sender's email domain does not match the claimed company.");
+    }
+
+    // Priority 4: brief reassurance — only if no payment/direct-scam danger
+    // was already surfaced. Keep to one compressed sentence.
+    if (!paymentMatches.length && !directScamFinding) {
+      const reassurances: string[] = [];
+      if (matchedPositive.some((m) => m.id === "specific_role" || m.id === "natural_company_mention")) {
+        reassurances.push("the message itself sounds professional");
+      }
+      if (domainIsPositive || domainCheck.status === "affiliated") {
+        reassurances.push("the sender domain appears tied to the organization");
+      }
+      if (wayback.archive_history_status === "established" || rdap.ageBucket === "established") {
+        reassurances.push("the company website appears established");
+      }
+      if (reassurances.length) {
+        summaryParts.push(`Some details look legitimate: ${reassurances.slice(0, 2).join(" and ")}.`);
+      } else if (matchedCaution.length && !matchedScam.length) {
+        summaryParts.push("A few smaller details are worth a second look, but nothing strongly suggests a scam.");
+      }
     } else {
-      summaryParts.push("We didn't find obvious scam wording.");
+      // Even with danger present, briefly acknowledge legit-looking signals
+      // so users don't dismiss the warning as obviously bogus.
+      if (
+        matchedPositive.length > 0 ||
+        domainIsPositive ||
+        domainCheck.status === "affiliated" ||
+        wayback.archive_history_status === "established"
+      ) {
+        summaryParts.push("Some details look legitimate, but legitimate-looking accounts can still be hacked or impersonated.");
+      }
     }
-    if (matchedPositive.length) {
-      summaryParts.push(
-        `On the positive side, we found ${matchedPositive.length} legitimacy signal${matchedPositive.length === 1 ? "" : "s"}: ${matchedPositive
-          .map((m) => m.finding.replace(/\.$/, ""))
-          .join("; ")}.`,
-      );
-    }
-    if (domainIsNegative) {
-      summaryParts.push(domainCheck.finding!);
-    } else if (domainIsPositive) {
-      summaryParts.push("The sender's email domain aligns with the claimed company.");
-    } else if (
-      domainCheck.status === "unverifiable" &&
-      domainCheck.finding &&
-      (data.recruiterEmail || data.companyDomain)
-    ) {
-      summaryParts.push(domainCheck.finding);
-    }
-    // Email header summary
-    if (headerAuth.explanations.length) {
-      summaryParts.push(
-        `Email header check: ${headerAuth.explanations.map((e) => e.finding.replace(/\.$/, "")).join("; ")}.`,
-      );
-    }
-    // OSINT / public web evidence
-    if (osint.result.findings.length) {
-      summaryParts.push(
-        `Public web evidence: ${osint.result.summary} ${osint.result.findings
-          .map((f) => f.replace(/\.$/, ""))
-          .join("; ")}.`,
-      );
-    }
-    // Why it matters context
-    summaryParts.push(`Why this matters: ${why_it_matters}`);
-    // Next steps — read all, not just the first
-    const stepsForAudio = Array.from(stepSet).slice(0, 5);
-    if (stepsForAudio.length) {
-      summaryParts.push(
-        `Recommended next steps: ${stepsForAudio.map((s, i) => `${i + 1}. ${s.replace(/\.$/, "")}`).join(". ")}.`,
-      );
+
+    // Bottom line: one short closing sentence.
+    if (paymentMatches.length || matchedScam.length >= 2) {
+      summaryParts.push("Bottom line: do not send money or share sensitive details, and verify the recruiter independently before continuing.");
+    } else if (directScamFinding || level === "Likely Scam" || level === "High") {
+      summaryParts.push("Bottom line: read the linked sources and verify the recruiter through official channels before responding.");
+    } else if (level === "Caution") {
+      summaryParts.push("Bottom line: proceed carefully and verify the recruiter through the official company website before sharing anything.");
+    } else {
+      summaryParts.push("Bottom line: this looks mostly legitimate, but a quick verification through official channels is still wise.");
     }
 
     // Build per-finding "why this matters" bullets so the user gets a clean,
