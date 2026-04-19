@@ -3677,6 +3677,14 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     } else if (domainCheck.status === "unverifiable" && (data.recruiterEmail || data.companyDomain)) {
       why_it_matters = `${why_it_matters} Note: we couldn't verify whether the sender's domain aligns with the claimed company.`;
     }
+    // Prepend an OSINT scam-evidence framing when public reports were found.
+    // This makes sure "Why it matters" reflects that the score is being driven
+    // up by real public evidence — not just by message wording.
+    if (osint.floor >= 50) {
+      why_it_matters = `Public web reports include direct scam complaints tied to this exact recruiter, domain, or company. That is a serious external signal — open and read the linked sources before sharing anything personal. ${why_it_matters}`;
+    } else if (osint.floor >= 25) {
+      why_it_matters = `Public web evidence includes scam-related mentions worth reviewing before trusting this outreach. The signal points to impersonation risk or limited-context scam complaints rather than conclusive proof — open the linked sources and judge them yourself. ${why_it_matters}`;
+    }
     // Note: header-auth reasons are NOT appended here — they're surfaced as
     // paired finding/explanation entries in `header_explanations` so the user
     // gets a clean per-pointer breakdown instead of a wall of text.
