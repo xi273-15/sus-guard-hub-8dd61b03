@@ -1294,10 +1294,15 @@ async function runTavilyOsint(input: {
         nextSteps.push(
           `Do not share personal or financial information until you've confirmed this recruiter genuinely works at ${ps.subject}.`,
         );
-        // Multi-hit impersonation warnings (3+) are a clear pattern, not noise.
-        scoreDelta += Math.min(20, 6 + ps.count * 2);
-        if (ps.count >= 3) floor = Math.max(floor, 30);
-        else floor = Math.max(floor, 20);
+        // Institution-level impersonation warnings about a real organization
+        // are a mild-to-moderate caution signal, NOT a major risk signal by
+        // default. They mean "this real org is sometimes impersonated by
+        // scammers" — not "this specific outreach is fraudulent". Keep both
+        // the score nudge and floor modest so they cannot single-handedly
+        // push a legitimate-looking case into High Risk.
+        scoreDelta += Math.min(10, 3 + ps.count);
+        if (ps.count >= 3) floor = Math.max(floor, 15);
+        else floor = Math.max(floor, 10);
       } else {
         // No legitimacy signals AND a company-name scam hit — stronger signal.
         findings.push(
