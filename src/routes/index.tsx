@@ -29,6 +29,7 @@ import {
   Loader2,
   ExternalLink,
 } from "lucide-react";
+import { ExternalLink as ExtLink } from "@/components/external-link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -637,15 +638,7 @@ function ResultsView({
               <ul className="mt-3 space-y-1.5">
                 {split.company.links.map((l, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm leading-relaxed">
-                    <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/80" />
-                    <a
-                      href={l.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="break-all text-primary underline-offset-4 hover:underline"
-                    >
-                      {l.title}
-                    </a>
+                    <ExtLink href={l.url} title={l.title} />
                   </li>
                 ))}
               </ul>
@@ -714,24 +707,16 @@ function ResultsView({
                   <ul className="mt-3 space-y-1.5">
                     {split.recruiter.links.map((l, i) => (
                       <li key={i} className="flex items-start gap-2 text-sm leading-relaxed">
-                        <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/80" />
-                        <a
-                          href={l.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="break-all text-primary underline-offset-4 hover:underline"
-                          title="Opens in a new tab"
-                        >
-                          {l.title}
-                          <span className="sr-only"> (opens in a new tab)</span>
-                        </a>
+                        <ExtLink href={l.url} title={l.title} />
                       </li>
                     ))}
                   </ul>
                   <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                    Links open in a new browser tab. Some sites like LinkedIn
-                    may block embedded viewing — if a link looks broken, copy
-                    it into a normal browser window.
+                    Links open the real URL in a new browser tab. Some sites
+                    (LinkedIn, Glassdoor) block visits from new sessions or
+                    require login — if you see a block page, tap the copy
+                    icon and paste the URL into a tab where you&apos;re
+                    already signed in.
                   </p>
                 </>
               )}
