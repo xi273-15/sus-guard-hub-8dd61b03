@@ -3655,6 +3655,15 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (waybackLookup.floor > 0) {
       score = Math.max(score, waybackLookup.floor);
     }
+    if (paymentFloor > 0) {
+      score = Math.max(score, paymentFloor);
+    }
+    // Direct public scam accusations (very strong osint signal) get their own floor.
+    if (osint.scoreDelta >= 25) {
+      score = Math.max(score, 70);
+    } else if (osint.scoreDelta >= 18) {
+      score = Math.max(score, 55);
+    }
     score = Math.max(0, Math.min(100, Math.round(score)));
     const level = levelFor(score);
 
