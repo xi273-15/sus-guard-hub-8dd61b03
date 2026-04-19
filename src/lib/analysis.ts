@@ -3792,8 +3792,10 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     // fail, and infrastructure is normal — positive identity signals should
     // outweigh general "this org is sometimes impersonated" warnings.
     const recruiterTiedToOrg =
-      osint.result.findings.some((f) => /connect|link/i.test(f)) ||
-      // consistencyHits / recruiterLegitHits aren't exposed; use a proxy:
+      osint.result.findings.some((f) => {
+        const lower = f.toLowerCase();
+        return lower.includes("connect") || lower.includes("link");
+      }) ||
       osint.result.summary.toLowerCase().includes("consistent with a real recruiter");
     const cleanIdentity =
       (domainCheck.status === "match" ||
