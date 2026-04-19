@@ -881,16 +881,43 @@ function analyzeDomainAlignment(
   }
 
   if (isLookalike(senderRoot, companyRoot)) {
+    // Stronger framing when an institutional/governmental root (.edu/.gov/etc.)
+    // is being mimicked by a commercial-looking variant (.com/.net/.co/.info)
+    // that shares the brand name. This is a classic impersonation pattern.
+    const senderSuffix = publicSuffix(senderDomain);
+    const companySuffix = publicSuffix(companyDomain);
+    const commercialSubstitution =
+      INSTITUTIONAL_TLDS.has(companySuffix) && !INSTITUTIONAL_TLDS.has(senderSuffix);
     return {
       status: "lookalike",
       senderDomain,
       companyDomain,
-      finding: `Recruiter email domain (${senderDomain}) looks like a lookalike of the claimed company domain (${companyRoot}).`,
-      reason:
-        "Lookalike domains (extra words, hyphens, or 1–2 character typos of the real company domain) are a classic impersonation tactic. A polished message does not change this.",
+      finding: commercialSubstitution
+        ? `Recruiter email domain (${senderDomain}) resembles ${companyRoot} but uses a different root (.${senderSuffix}) instead of the legitimate .${companySuffix}.`
+        : `Recruiter email domain (${senderDomain}) looks like a lookalike of the claimed company domain (${companyRoot}).`,
+      reason: commercialSubstitution
+        ? "Swapping a trusted institutional root (.edu/.gov/.ac.uk/etc.) for a commercial one (.com/.net/.info) while keeping the brand name is a classic impersonation pattern. The visual similarity is intentional."
+        : "Lookalike domains (extra words, hyphens, or 1–2 character typos of the real company domain) are a classic impersonation tactic. A polished message does not change this.",
       next_step: `Do not reply on this address. Verify the recruiter through the official ${companyRoot} careers page or LinkedIn, and only respond to a genuine @${companyRoot} address.`,
-      scoreDelta: 45,
-      floor: 55,
+      scoreDelta: commercialSubstitution ? 50 : 45,
+      floor: commercialSubstitution ? 65 : 55,
+    };
+  }
+
+  // Affiliated / same-organization-family check (e.g. brooklyn.cuny.edu vs
+  // brooklyn.edu). Only kicks in for trusted institutional/governmental TLDs.
+  if (isLikelyAffiliated(senderDomain, senderRoot, companyDomain, companyRoot)) {
+    return {
+      status: "affiliated",
+      senderDomain,
+      companyDomain,
+      finding: `Recruiter email domain (${senderDomain}) appears affiliated with the claimed organization (${companyDomain}) — different domain, but likely part of the same institutional family.`,
+      reason:
+        "The sender's domain and the claimed organization's domain share a distinctive name under trusted institutional/governmental suffixes (.edu, .gov, .ac.uk, etc.). This is consistent with a real campus/department/member-institution relationship rather than impersonation.",
+      next_step:
+        "Affiliated institutional domains are common and usually legitimate. Still confirm the recruiter on the organization's official directory or careers page.",
+      scoreDelta: -6,
+      floor: 0,
     };
   }
 
