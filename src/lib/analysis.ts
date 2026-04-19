@@ -1477,8 +1477,8 @@ async function runRdapLookup(input: {
   let nextStep: string | null = null;
 
   if (bucket === "very_new") {
-    scoreDelta = 25;
-    floor = 40;
+    scoreDelta = 22;
+    floor = 30;
     whyPoint = {
       finding: `Sender domain ${lookupDomain} was registered ${ageDays} day${ageDays === 1 ? "" : "s"} ago.`,
       why: interpretation,
@@ -1486,7 +1486,7 @@ async function runRdapLookup(input: {
     };
     nextStep = `Be very cautious — ${lookupDomain} is brand new. Verify the recruiter through the official company website before sharing anything.`;
   } else if (bucket === "new") {
-    scoreDelta = 12;
+    scoreDelta = 16;
     floor = 20;
     whyPoint = {
       finding: `Sender domain ${lookupDomain} is under 90 days old.`,
@@ -1495,14 +1495,14 @@ async function runRdapLookup(input: {
     };
     nextStep = `Treat ${lookupDomain} with caution — it's a recently created domain. Confirm the recruiter through an official, separate channel.`;
   } else if (bucket === "young") {
-    scoreDelta = 4;
+    scoreDelta = 7;
     whyPoint = {
       finding: `Sender domain ${lookupDomain} is under a year old.`,
       why: interpretation,
       severity: "caution",
     };
   } else if (bucket === "established") {
-    scoreDelta = -3;
+    scoreDelta = -4;
     whyPoint = {
       finding: `Sender domain ${lookupDomain} has been registered for years.`,
       why: interpretation,
@@ -1624,7 +1624,7 @@ async function runDnsLookup(input: {
   if (health === "missing") {
     interpretation = `${lookupDomain} has no mail (MX) and no web (A/AAAA) records. A real recruiting domain almost always has both. This is a strong concern, though not proof of malicious intent on its own.`;
     scoreDelta = 18;
-    floor = 30;
+    floor = 25;
     whyPoint = {
       finding: `${lookupDomain} has no MX, A, or AAAA records.`,
       why: interpretation,
@@ -1633,8 +1633,8 @@ async function runDnsLookup(input: {
     nextStep = `Be very cautious — ${lookupDomain} doesn't appear to host normal email or web infrastructure. Verify the recruiter through the official company website.`;
   } else if (health === "minimal") {
     interpretation = `${lookupDomain} has web records but no MX records, meaning it isn't set up to receive email normally. A domain actively sending recruiter mail without MX is a meaningful caution.`;
-    scoreDelta = 12;
-    floor = 20;
+    scoreDelta = 14;
+    floor = 18;
     whyPoint = {
       finding: `${lookupDomain} has no MX records.`,
       why: interpretation,
@@ -1646,7 +1646,10 @@ async function runDnsLookup(input: {
     if (!hasSpf) missing.push("SPF");
     if (!hasDmarc) missing.push("DMARC");
     interpretation = `${lookupDomain} has working email infrastructure (MX${hasA || hasAaaa ? " and web records" : ""}) but is missing ${missing.join(" and ")}. Many small or older domains skip these — it's a mild caution, not proof of fraud.`;
-    scoreDelta = missing.length === 2 ? 5 : 3;
+    // SPF missing on its own is heavier than DMARC alone.
+    if (missing.includes("SPF") && missing.includes("DMARC")) scoreDelta = 14;
+    else if (missing.includes("SPF")) scoreDelta = 10;
+    else scoreDelta = 6;
     whyPoint = {
       finding: `${lookupDomain} is missing ${missing.join(" and ")} record${missing.length === 1 ? "" : "s"}.`,
       why: interpretation,
