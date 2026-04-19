@@ -4093,7 +4093,13 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
 
     // 3. Brief reassuring signals — one short line, no detail.
     const reassures: string[] = [];
-    if (domainIsPositive) reassures.push("the sender's email domain matches the claimed company");
+    if (domainIsPositive) {
+      reassures.push(
+        domainIsAffiliated
+          ? "the sender's email domain appears affiliated with the claimed organization"
+          : "the sender's email domain matches the claimed company",
+      );
+    }
     if (matchedPositive.length && !matchedScam.length)
       reassures.push("the message itself does not contain obvious scam wording");
     if (wayback.archive_history_status === "established") reassures.push("the website appears established");
