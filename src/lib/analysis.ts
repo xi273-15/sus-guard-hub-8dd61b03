@@ -767,6 +767,100 @@ function isLookalike(senderRoot: string, companyRoot: string): boolean {
   return false;
 }
 
+// Effective TLD (eTLD): last 2 labels for known multi-part TLDs, otherwise last label.
+function effectiveTld(host: string): string {
+  const parts = host.split(".");
+  if (parts.length < 2) return host;
+  const lastTwo = parts.slice(-2).join(".");
+  if (MULTI_PART_TLDS.has(lastTwo)) return lastTwo;
+  return parts[parts.length - 1];
+}
+
+// Institutional/government TLDs where shared TLD + label overlap is strong
+// evidence of an organization family (e.g. brooklyn.cuny.edu vs brooklyn.edu).
+const INSTITUTIONAL_TLDS = new Set([
+  "edu",
+  "gov",
+  "mil",
+  "ac.uk",
+  "gov.uk",
+  "edu.au",
+  "gov.au",
+  "ac.jp",
+  "go.jp",
+  "ac.nz",
+  "govt.nz",
+  "ac.in",
+  "gov.in",
+  "edu.sg",
+  "gov.sg",
+]);
+
+/**
+ * Detects affiliated / same-organization-family domains, e.g.
+ *   brooklyn.cuny.edu  ↔ brooklyn.edu       (institutional TLD + shared label)
+ *   jjay.cuny.edu      ↔ careers.cuny.edu   (shared multi-label suffix)
+ *   careers.acme.co.uk ↔ acme.co.uk         (handled earlier as subdomain)
+ *
+ * Strict rules — both must hold:
+ *  1. The two domains share the SAME effective TLD (no .edu→.com swap).
+ *  2. Either:
+ *     a) Both share a non-trivial multi-label suffix beyond the eTLD (e.g.
+ *        both end in `cuny.edu`), OR
+ *     b) The eTLD is institutional (.edu/.gov/.mil/.ac.uk/etc.) AND the
+ *        primary label of one root appears as a label inside the other's
+ *        full hostname (e.g. `brooklyn` label matches across both).
+ *
+ * Returns false for lookalikes and unrelated domains. Visual similarity
+ * alone never qualifies as affiliation.
+ */
+function isAffiliated(
+  senderHost: string,
+  companyHost: string,
+  senderRoot: string,
+  companyRoot: string,
+): boolean {
+  if (!senderHost || !companyHost) return false;
+  if (senderRoot === companyRoot) return false; // already handled as match/subdomain
+
+  const sTld = effectiveTld(senderHost);
+  const cTld = effectiveTld(companyHost);
+  if (sTld !== cTld) return false; // TLD swap (.edu → .com) is never affiliation
+
+  const sParts = senderHost.split(".");
+  const cParts = companyHost.split(".");
+
+  // Rule 2a: shared multi-label suffix beyond the eTLD.
+  // e.g. jjay.cuny.edu and careers.cuny.edu both end in "cuny.edu".
+  const tldDepth = sTld.split(".").length;
+  // Try suffix of length tldDepth+1 first (one org label above the TLD).
+  if (sParts.length >= tldDepth + 1 && cParts.length >= tldDepth + 1) {
+    const sSuffix = sParts.slice(-(tldDepth + 1)).join(".");
+    const cSuffix = cParts.slice(-(tldDepth + 1)).join(".");
+    if (sSuffix === cSuffix) {
+      // Shared suffix like "cuny.edu" — but only if the shared org label is
+      // non-generic (avoid trivial labels like "co", "com", "www").
+      const sharedLabel = sParts[sParts.length - tldDepth - 1];
+      if (sharedLabel && sharedLabel.length >= 3 && !["www", "mail", "smtp"].includes(sharedLabel)) {
+        return true;
+      }
+    }
+  }
+
+  // Rule 2b: institutional TLD + label overlap across hostnames.
+  // e.g. brooklyn.cuny.edu (labels: brooklyn, cuny, edu) and brooklyn.edu
+  //      (labels: brooklyn, edu) share the label "brooklyn" with same .edu TLD.
+  if (INSTITUTIONAL_TLDS.has(sTld)) {
+    const sLabels = new Set(sParts.slice(0, -tldDepth).filter((l) => l.length >= 4));
+    const cLabels = new Set(cParts.slice(0, -tldDepth).filter((l) => l.length >= 4));
+    for (const label of sLabels) {
+      if (cLabels.has(label)) return true;
+    }
+  }
+
+  return false;
+}
+
 function analyzeDomainAlignment(
   recruiterEmail: string | undefined,
   companyDomainInput: string | undefined,
