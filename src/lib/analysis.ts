@@ -4009,22 +4009,16 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (otherWeakSignals) {
         score = Math.min(100, score + recruiterLocationLookup.scoreDelta);
       }
-      summaryParts.push(`${recruiterLocation.summary} ${recruiterLocation.caution_note ?? ""}`.trim());
+      // (Recruiter location detail intentionally not pushed into summaryParts.)
       findings.push(
         `Recruiter public location appears to be ${recruiterLocation.recruiter_public_location} — differs from ${recruiterLocation.hiring_context_label}.`,
       );
-    } else if (recruiterLocation.available && recruiterLocation.recruiter_public_location) {
-      summaryParts.push(recruiterLocation.summary);
     }
 
     // Website traffic context: third-party estimates only. Same gating logic
     // as recruiter location — geo mismatch alone is never proof of fraud.
     if (websiteTrafficLookup.whyPoint) why_points.push(websiteTrafficLookup.whyPoint);
-    if (websiteTraffic.traffic_estimate_status !== "unavailable") {
-      summaryParts.push(
-        `Website traffic context: ${websiteTraffic.estimated_visibility_summary} ${websiteTraffic.traffic_context_note}`.trim(),
-      );
-    }
+    // (Website traffic context intentionally not pushed into summaryParts.)
     if (websiteTraffic.geo_mismatch && websiteTrafficLookup.scoreDelta > 0) {
       const otherWeakSignals =
         matchedCaution.length > 0 ||
