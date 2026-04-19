@@ -2294,7 +2294,7 @@ async function runWayback(input: {
   if (status === "established") {
     const years = Math.floor((ageDays ?? 0) / 365);
     interpretation = `${rawDomain} has long-standing archive history (~${years} years, ${snapshotCount} snapshots). Consistent with an established, regularly operated website — though not proof on its own.`;
-    scoreDelta = -3;
+    scoreDelta = -4;
     whyPoint = {
       finding: `${rawDomain} has long-standing visible web history (first archived around ${niceFirst}).`,
       why: interpretation,
@@ -2311,7 +2311,7 @@ async function runWayback(input: {
     };
   } else if (status === "thin") {
     interpretation = `${rawDomain} has only thin archive history (about ${ageDays} days, ${snapshotCount} snapshots). Possible for a small or recent site, but worth noting if the company is supposed to be well-established.`;
-    scoreDelta = 4;
+    scoreDelta = 6;
     whyPoint = {
       finding: `${rawDomain} has thin web history (about ${ageDays} days, ${snapshotCount} snapshots).`,
       why: interpretation,
@@ -2319,7 +2319,7 @@ async function runWayback(input: {
     };
   } else if (status === "recent_only") {
     interpretation = `${rawDomain} only appears in archive history very recently (about ${ageDays} day${ageDays === 1 ? "" : "s"} ago). Brand-new sites are normal for new companies, but a recruiter from a supposedly established employer using a brand-new site is a meaningful caution.`;
-    scoreDelta = 8;
+    scoreDelta = 16;
     whyPoint = {
       finding: `${rawDomain} only appears in web archive history very recently (~${ageDays} day${ageDays === 1 ? "" : "s"} ago).`,
       why: interpretation,
@@ -2328,7 +2328,7 @@ async function runWayback(input: {
     nextStep = `Treat ${rawDomain} with extra caution — it has very little visible web history. Verify the company through an independent source.`;
   } else if (status === "none") {
     interpretation = `${rawDomain} has no visible Wayback Machine history. Most working business sites have at least a few snapshots. This is a mild caution, not proof of fraud.`;
-    scoreDelta = 3;
+    scoreDelta = 6;
     whyPoint = {
       finding: `${rawDomain} has no visible Wayback Machine history.`,
       why: interpretation,
