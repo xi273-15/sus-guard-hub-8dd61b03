@@ -3582,7 +3582,11 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       domainCheck.status === "public_email" ||
       headerAuth.dmarc === "fail" ||
       headerAuth.spf === "fail" ||
-      headerAuth.dkim === "fail";
+      headerAuth.dkim === "fail" ||
+      // OSINT scam evidence (direct fraud reports, multi-hit impersonation
+      // warnings, recruiter-name complaints) is also a strong red flag —
+      // a polished message must not be allowed to neutralize it.
+      osint.floor >= 25;
     const positiveCap = hasStrongRedFlag ? 5 : 18;
     const positiveDeduction = Math.min(positiveScore, positiveCap);
     score -= positiveDeduction;
