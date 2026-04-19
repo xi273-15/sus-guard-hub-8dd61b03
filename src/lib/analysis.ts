@@ -3438,6 +3438,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (authFloor > 0) noMsgScore = Math.max(noMsgScore, authFloor);
       if (rdapLookup.floor > 0) noMsgScore = Math.max(noMsgScore, rdapLookup.floor);
       if (dnsLookup.floor > 0) noMsgScore = Math.max(noMsgScore, dnsLookup.floor);
+      if (osint.floor > 0) noMsgScore = Math.max(noMsgScore, osint.floor);
       osint.result.findings.forEach((f) => baseFindings.push(f));
       osint.nextSteps.forEach((s) => baseSteps.push(s));
       if (rdap.available) {
