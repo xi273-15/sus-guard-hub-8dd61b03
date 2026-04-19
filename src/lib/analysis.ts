@@ -3546,7 +3546,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const matchedCaution: Signal[] = [];
     const matchedPositive: Signal[] = [];
 
-    let score = 10;
+    let score = 5;
     let scamScore = 0;
     let cautionScore = 0;
     let positiveScore = 0;
