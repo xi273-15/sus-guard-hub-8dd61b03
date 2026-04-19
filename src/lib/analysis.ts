@@ -3584,11 +3584,45 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     score += ctLookup.scoreDelta;
     score += waybackLookup.scoreDelta;
 
+    // ---------- Combo bonuses ----------
+    // Some signals together are worth more than the sum of their parts.
+    const isPublicEmail = domainCheck.status === "public_email";
+    const isDomainMismatch =
+      domainCheck.status === "mismatch" || domainCheck.status === "lookalike";
+    const hasScammyMessage = matchedScam.length >= 2 || matchedScam.some((s) => s.weight >= 20);
+    const hasOffPlatform = matchedScam.some((s) => s.id === "offplatform");
+    const hasMoneyAsk = matchedScam.some((s) =>
+      ["payment", "check_equipment", "gift_crypto"].includes(s.id),
+    );
+    const hasSensitiveAsk = matchedScam.some((s) => s.id === "sensitive_docs");
+    const hasOsintScam = osint.floor >= 25;
+    const hasLookalike = domainCheck.status === "lookalike";
+    const hasOsintDomainScam = osint.floor >= 45;
+    const hasRecentDomain =
+      rdapLookup.result.ageBucket === "very_new" || rdapLookup.result.ageBucket === "new";
+    const hasThinSite =
+      waybackLookup.result.archive_history_status === "recent_only" ||
+      waybackLookup.result.archive_history_status === "thin" ||
+      waybackLookup.result.archive_history_status === "none";
+    const hasWeakDns =
+      dnsLookup.result.health === "thin" ||
+      dnsLookup.result.health === "minimal" ||
+      dnsLookup.result.health === "missing";
+
+    // domain mismatch + free email provider (impossible — they're exclusive),
+    // so use mismatch + scammy message instead
+    if (isDomainMismatch && hasScammyMessage) score += 10;
+    if (isPublicEmail && hasScammyMessage) score += 10;
+    if (hasMoneyAsk && hasOsintScam) score += 15;
+    if (hasOffPlatform && isDomainMismatch) score += 8;
+    if (hasOsintDomainScam && hasLookalike) score += 15;
+    if (hasRecentDomain && hasThinSite && hasWeakDns) score += 12;
+
     // Cap how much positive wording can lower the score. Strong red flags
     // (high-weight scam signals or domain mismatch/lookalike/public_email)
     // must not be neutralized by a polished message.
     const hasStrongRedFlag =
-      matchedScam.some((s) => s.weight >= 15) ||
+      matchedScam.some((s) => s.weight >= 20) ||
       domainCheck.status === "mismatch" ||
       domainCheck.status === "lookalike" ||
       domainCheck.status === "public_email" ||
@@ -3598,14 +3632,24 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       // OSINT scam evidence (direct fraud reports, multi-hit impersonation
       // warnings, recruiter-name complaints) is also a strong red flag —
       // a polished message must not be allowed to neutralize it.
-      osint.floor >= 25;
-    const positiveCap = hasStrongRedFlag ? 5 : 18;
+      osint.floor >= 25 ||
+      safeBrowsingLookup.floor >= 30;
+    const positiveCap = hasStrongRedFlag ? 4 : 12;
     const positiveDeduction = Math.min(positiveScore, positiveCap);
     score -= positiveDeduction;
 
     if (matchedScam.length === 0 && !hasStrongRedFlag && matchedPositive.length >= 3) {
-      score -= 6;
+      score -= 4;
     }
+
+    // ---------- Combo floors ----------
+    if (hasMoneyAsk) score = Math.max(score, 55);
+    if (hasSensitiveAsk) score = Math.max(score, 55);
+    if (hasOffPlatform && isDomainMismatch) score = Math.max(score, 45);
+    if (isPublicEmail && hasOsintScam) score = Math.max(score, 40);
+    if (headerAuth.dmarc === "fail" && isDomainMismatch) score = Math.max(score, 35);
+    if (hasLookalike) score = Math.max(score, 40);
+    if (osint.floor >= 45) score = Math.max(score, 45);
 
     // Enforce domain-driven minimum risk floor.
     if (domainCheck.floor > 0) {
