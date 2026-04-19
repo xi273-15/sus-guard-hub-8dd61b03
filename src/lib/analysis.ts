@@ -1806,7 +1806,7 @@ async function runSafeBrowsing(input: {
           safe_browsing_findings: types,
           safe_browsing_summary: summary,
         },
-        scoreDelta: 25,
+        scoreDelta: 35,
         floor: 60,
         whyPoint: {
           finding: `${rawDomain} is currently flagged by Google Safe Browsing (${human}).`,
@@ -3221,6 +3221,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
           "Sender check (SPF) passed — the email really did come from a server the company allows.",
           "SPF is like a guest list at the door. A 'pass' means the company confirms this email was sent from one of their approved mail servers, which is what you'd expect from a real recruiter.",
         );
+        result.scoreDelta -= 3;
       } else if (spfStatus === "softfail" || spfStatus === "neutral") {
         result.spf = "softfail";
         note(
@@ -3239,8 +3240,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
           "This is like someone showing up claiming to be from a company, but that company's official 'guest list' says they never sent them. It's a strong sign the sender is faking their identity.",
           "Don't trust this sender. Go to the company's real website and contact them directly to check.",
         );
-        result.scoreDelta += 18;
-        result.floor = Math.max(result.floor, 25);
+        result.scoreDelta += 22;
+        result.floor = Math.max(result.floor, 30);
       } else if (spfStatus === "none") {
         result.spf = "none";
         note(
@@ -3265,6 +3266,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
           "Digital signature (DKIM) passed — the email's 'wax seal' matches and wasn't tampered with.",
           "DKIM is a digital wax seal the company stamps onto every email. A pass means the seal is intact, so the message wasn't changed in transit and really came from the company.",
         );
+        result.scoreDelta -= 3;
       } else if (dkimLikelyForwarderBreak) {
         result.dkim = "pass";
         note(
@@ -3283,7 +3285,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
           "Real companies put a digital 'wax seal' on their emails. If the seal is broken or doesn't match, the email was either tampered with or wasn't really sent by that company.",
           "Treat this email as suspicious and contact the company through their official website to confirm.",
         );
-        result.scoreDelta += 16;
+        result.scoreDelta += 18;
         result.floor = Math.max(result.floor, 25);
       } else if (dkimStatus === "none") {
         result.dkim = "none";
@@ -3304,6 +3306,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
           "Anti-impersonation check (DMARC) passed — the email matches the company's own rules for what their real email looks like.",
           "DMARC is the company's own policy that says 'only real emails from us should pass.' A pass here means this message lines up with the company's identity rules, which is what you'd expect from a real recruiter.",
         );
+        result.scoreDelta -= 4;
       } else if (dmarcStatus === "fail") {
         result.dmarc = "fail";
         note(
@@ -3312,7 +3315,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
           "DMARC is the company's own rule that says 'only real emails from us should pass.' When it fails, it usually means someone is trying to impersonate the company to trick you.",
           "Do not trust this sender. Go to the company's official careers page and contact them directly instead.",
         );
-        result.scoreDelta += 22;
+        result.scoreDelta += 25;
         result.floor = Math.max(result.floor, 35);
       } else if (dmarcStatus === "none") {
         result.dmarc = "none";
@@ -3322,7 +3325,13 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
           "Without DMARC, scammers can more easily send emails that look like they're from this company. You can't rely on the sender's name alone.",
           "Be careful and double-check the recruiter through a separate, trusted channel — not by replying to this email.",
         );
-        result.scoreDelta += 8;
+        result.scoreDelta += 10;
+      }
+
+      // Combo bonus: SPF fail + DKIM fail + DMARC fail together = strong identity-deception combo
+      if (result.spf === "fail" && result.dkim === "fail" && result.dmarc === "fail") {
+        result.scoreDelta += 10;
+        result.floor = Math.max(result.floor, 50);
       }
 
       // Outlook-specific: compauth (composite authentication)
