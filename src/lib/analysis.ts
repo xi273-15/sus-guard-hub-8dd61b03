@@ -3745,63 +3745,11 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     // paired finding/explanation entries in `header_explanations` so the user
     // gets a clean per-pointer breakdown instead of a wall of text.
 
-    const summaryParts: string[] = [`This recruiter check scored ${score} out of 100, which is ${level}.`];
-    if (matchedScam.length) {
-      summaryParts.push(
-        `We detected ${matchedScam.length} scam signal${matchedScam.length === 1 ? "" : "s"}: ${matchedScam
-          .map((m) => m.finding.replace(/\.$/, ""))
-          .join("; ")}.`,
-      );
-    } else if (matchedCaution.length) {
-      summaryParts.push(
-        `We didn't find strong scam wording, but ${matchedCaution.length} thing${matchedCaution.length === 1 ? "" : "s"} ${matchedCaution.length === 1 ? "is" : "are"} worth a second look: ${matchedCaution
-          .map((m) => m.finding.replace(/\.$/, ""))
-          .join("; ")}.`,
-      );
-    } else {
-      summaryParts.push("We didn't find obvious scam wording.");
-    }
-    if (matchedPositive.length) {
-      summaryParts.push(
-        `On the positive side, we found ${matchedPositive.length} legitimacy signal${matchedPositive.length === 1 ? "" : "s"}: ${matchedPositive
-          .map((m) => m.finding.replace(/\.$/, ""))
-          .join("; ")}.`,
-      );
-    }
-    if (domainIsNegative) {
-      summaryParts.push(domainCheck.finding!);
-    } else if (domainIsPositive) {
-      summaryParts.push("The sender's email domain aligns with the claimed company.");
-    } else if (domainCheck.status === "unverifiable" && domainCheck.finding && (data.recruiterEmail || data.companyDomain)) {
-      summaryParts.push(domainCheck.finding);
-    }
-    // Email header summary
-    if (headerAuth.explanations.length) {
-      summaryParts.push(
-        `Email header check: ${headerAuth.explanations
-          .map((e) => e.finding.replace(/\.$/, ""))
-          .join("; ")}.`,
-      );
-    }
-    // OSINT / public web evidence
-    if (osint.result.findings.length) {
-      summaryParts.push(
-        `Public web evidence: ${osint.result.summary} ${osint.result.findings
-          .map((f) => f.replace(/\.$/, ""))
-          .join("; ")}.`,
-      );
-    }
-    // Why it matters context
-    summaryParts.push(`Why this matters: ${why_it_matters}`);
-    // Next steps — read all, not just the first
-    const stepsForAudio = Array.from(stepSet).slice(0, 5);
-    if (stepsForAudio.length) {
-      summaryParts.push(
-        `Recommended next steps: ${stepsForAudio
-          .map((s, i) => `${i + 1}. ${s.replace(/\.$/, "")}`)
-          .join(". ")}.`,
-      );
-    }
+    // Note: we no longer build a long subsystem-by-subsystem audio summary here.
+    // A short, prioritized summary is composed at the end of this function so it
+    // can lead with the most concerning signals (OSINT scam evidence, domain
+    // mismatch, scam wording) and only briefly mention reassuring signals.
+    const summaryParts: string[] = [];
 
     // Build per-finding "why this matters" bullets so the user gets a clean,
     // point-by-point breakdown instead of one big paragraph.
