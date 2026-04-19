@@ -4173,14 +4173,19 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (level === "Likely Scam") {
       bottomLine = "Bottom line: treat this as a likely scam and do not engage further until you can independently verify the sender.";
     } else if (level === "High") {
-      bottomLine = "Bottom line: this carries meaningful risk — verify the recruiter through official channels before sharing anything.";
+      bottomLine = osint.impersonationOnly && !matchedScam.length && !domainIsNegative
+        ? "Bottom line: this outreach itself looks mostly legitimate, but because the institution is sometimes impersonated, verify the recruiter through official channels before sharing anything."
+        : "Bottom line: this carries meaningful risk — verify the recruiter through official channels before sharing anything.";
     } else if (level === "Caution") {
-      bottomLine =
-        osint.floor >= 25
+      bottomLine = osint.impersonationOnly
+        ? "Bottom line: we did not find strong evidence that this specific recruiter is fake, but it is wise to verify through official channels because the institution has been used in impersonation scams."
+        : osint.floor >= 25
           ? "Bottom line: this isn't an obvious fake, but the public warning context is enough that the recruiter should be verified carefully before continuing."
           : "Bottom line: not clearly a scam, but verify the recruiter before sharing anything personal.";
     } else {
-      bottomLine = "Bottom line: no obvious red flags, but a quick verification through the official company site is still wise before sharing personal info.";
+      bottomLine = osint.impersonationOnly
+        ? "Bottom line: this outreach appears mostly legitimate, but the organization is known to be impersonated sometimes, so basic verification is still recommended."
+        : "Bottom line: no obvious red flags, but a quick verification through the official company site is still wise before sharing personal info.";
     }
 
     // If literally nothing concerning surfaced, lead with a calm one-liner.
