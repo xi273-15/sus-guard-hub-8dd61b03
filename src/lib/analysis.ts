@@ -1054,8 +1054,51 @@ async function runTavilyOsint(input: {
   // scammers impersonating that real organization — not the org itself.
   const looksLikeRealOrg = consistencyHits > 0 || recruiterLegitHits > 0;
 
+  // Direct accusation patterns — a public article title or snippet directly
+  // calling the subject (company, recruiter, or domain) a scam/fraud.
+  // These are stronger than generic "may be impersonated" warnings.
+  const DIRECT_ACCUSATION = /\b(scam company|fraud company|scam job|fake recruiter|fake job|is a scam|is a fraud|avoid this company|scam alert|scam warning|reported as scam|fraudulent company|known scam|confirmed scam)\b/i;
+
   for (const ps of pendingScams) {
     const isDomainScam = ps.kind === "domain_scam";
+
+    // Detect DIRECT scam accusations in titles/snippets that name the subject
+    // (e.g. "Acme Corp is a scam company"). This is a much stronger signal
+    // than generic impersonation warnings.
+    const subjectLc = ps.subject.toLowerCase();
+    const directAccusations = ps.matches.filter((r) => {
+      const title = (r.title ?? "").toLowerCase();
+      const snippet = (r.content ?? "").toLowerCase();
+      const titleMentionsSubject = title.includes(subjectLc) || (isDomainScam && title.includes(subjectLc.split(".")[0]));
+      const snippetMentionsSubject = snippet.includes(subjectLc);
+      const titleAccusation = DIRECT_ACCUSATION.test(title);
+      const snippetAccusation = DIRECT_ACCUSATION.test(snippet);
+      // Strong: title directly accuses + names the subject, OR snippet has both
+      return (titleMentionsSubject && titleAccusation) || (snippetMentionsSubject && snippetAccusation);
+    });
+
+    if (directAccusations.length > 0) {
+      // Direct accusation against the exact company / domain / recruiter.
+      // This overrides the impersonation framing entirely.
+      const subjectKind = isDomainScam ? "domain" : "company";
+      findings.push(
+        `Public articles directly describe ${ps.subject} as a scam (${directAccusations.length} report${directAccusations.length === 1 ? "" : "s"}). Open the linked sources before responding.`,
+      );
+      whyPoints.push({
+        finding: `Public reports directly accuse ${ps.subject} of being a scam.`,
+        why: `These are not generic impersonation warnings — the linked articles or reviews directly describe the exact ${subjectKind} as fraudulent. This is one of the strongest external risk signals available.`,
+        severity: "bad",
+      });
+      nextSteps.push(
+        `Open and read the linked scam reports about ${ps.subject} before replying or sharing any information.`,
+      );
+      // Strong score bump — domain-level direct accusations are the heaviest.
+      scoreDelta += isDomainScam ? Math.min(45, 25 + directAccusations.length * 5) : Math.min(35, 18 + directAccusations.length * 4);
+      directAccusations.slice(0, 3).forEach((r) => allLinks.push({ title: r.title ?? r.url ?? "Result", url: r.url ?? "" }));
+      // Skip the impersonation/soft-framing branches below for this subject.
+      continue;
+    }
+
     // Domain-level scam mentions tied to the exact analyzed domain stay a
     // strong red flag. Company-name scam mentions on a real org are reframed
     // as a cautionary impersonation warning.
@@ -1077,8 +1120,6 @@ async function runTavilyOsint(input: {
       scoreDelta += Math.min(6, 2 + ps.count);
     } else if (isDomainScam) {
       // Decide whether the evidence is "strong and direct" vs. weak/indirect.
-      // Strong = the exact domain appears inside the result content/url AND the
-      // result is clearly about fraud (not just a warning/impersonation advisory).
       const domainLc = ps.subject.toLowerCase();
       const directMatches = ps.matches.filter((r) => {
         const text = `${r.url ?? ""} ${r.content ?? ""}`.toLowerCase();
@@ -1101,10 +1142,8 @@ async function runTavilyOsint(input: {
         nextSteps.push(
           `Do not reply to ${ps.subject}. Read the public scam reports tied to that domain before taking any action.`,
         );
-        scoreDelta += Math.min(15, 6 + ps.count * 3);
+        scoreDelta += Math.min(25, 12 + ps.count * 3);
       } else {
-        // Indirect / weak / possibly-impersonation evidence — soften the wording
-        // and treat as minor caution rather than a major red flag.
         findings.push(`Scam-related public mentions were found near the domain ${ps.subject}, but context is limited.`);
         whyPoints.push({
           finding: `Public results mention ${ps.subject} in scam-related discussions, though context is limited.`,
@@ -1114,13 +1153,9 @@ async function runTavilyOsint(input: {
         nextSteps.push(
           `Skim the linked sources to see whether they actually describe ${ps.subject} as malicious, or just mention it in passing.`,
         );
-        // Small bump only when there are no strong legitimacy signals; if the
-        // org looks legit, keep the overall risk essentially unchanged.
         scoreDelta += looksLikeRealOrg ? Math.min(3, 1 + Math.floor(ps.count / 2)) : Math.min(6, 2 + ps.count);
       }
     } else {
-      // No legitimacy signals AND a company-name scam hit — keep cautionary
-      // wording (we still don't want to call the org itself fraudulent).
       findings.push(
         `Public web includes scam-related mentions involving ${ps.subject} (${ps.count} result${ps.count === 1 ? "" : "s"}).`,
       );
