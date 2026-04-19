@@ -583,34 +583,34 @@ function defaultNextSteps(level: RiskLevel): string[] {
 }
 
 function buildWhyItMatters(level: RiskLevel, scamCount: number, cautionCount: number, positiveCount: number): string {
-  const negCount = scamCount + cautionCount;
+  const hasNeg = scamCount + cautionCount > 0;
 
   if (level === "Likely Scam") {
-    return `We found ${scamCount} strong scam signal${scamCount === 1 ? "" : "s"} in this message. The pattern closely matches known recruiter scams — treat any further contact as fraudulent until proven otherwise.`;
+    return `The message and its surrounding signals match patterns commonly seen in recruiter scams. Treat further contact as untrustworthy until you can independently verify the sender.`;
   }
 
   if (level === "High") {
     const tail = positiveCount
-      ? ` We also noticed ${positiveCount} legitimate-sounding element${positiveCount === 1 ? "" : "s"}, but the scam signals outweigh them.`
+      ? ` Some elements look legitimate, but they don't outweigh the concerning ones.`
       : "";
-    return `We found ${negCount} concerning signal${negCount === 1 ? "" : "s"}. This combination commonly appears in recruiter scams, especially when the sender pressures you or asks for sensitive info.${tail}`;
+    return `Several concerning signals are present. This combination is consistent with recruiter scams, especially where the sender pushes for a quick reply or asks for sensitive information.${tail}`;
   }
 
   if (level === "Caution") {
-    if (positiveCount && negCount) {
-      return `This message has ${positiveCount} legitimate-looking element${positiveCount === 1 ? "" : "s"} (like a specific role or normal next step) but also ${negCount} thing${negCount === 1 ? "" : "s"} worth a second look. It isn't clearly a scam, but verify before sharing anything personal.`;
+    if (positiveCount && hasNeg) {
+      return `Parts of this outreach look legitimate, but other parts are vague or unusual enough to warrant a second look before sharing anything personal.`;
     }
-    if (negCount) {
-      return `We found ${negCount} signal${negCount === 1 ? "" : "s"} worth a second look. The message isn't clearly a scam, but it has wording or vagueness that real recruiters usually avoid.`;
+    if (hasNeg) {
+      return `This message has wording or gaps that real recruiters usually avoid. It isn't clearly a scam, but verify the sender before continuing.`;
     }
-    return "This message is borderline — not clearly safe and not clearly malicious. Verify the recruiter before continuing.";
+    return `This is borderline — not clearly safe and not clearly malicious. Verify the recruiter before continuing.`;
   }
 
   // Low
   if (positiveCount) {
-    return `This message reads like normal recruiter outreach: we found ${positiveCount} legitimacy signal${positiveCount === 1 ? "" : "s"} (such as a specific role, company mention, or normal next step) and no strong scam wording. Still verify the recruiter through the official company website before sharing personal info.`;
+    return `This reads like normal recruiter outreach and contains no strong scam wording. Still verify the recruiter through the official company website before sharing personal info.`;
   }
-  return "We didn't find obvious scam signals in this message. That doesn't guarantee it's safe — always verify the recruiter through the official company website before sharing personal info.";
+  return `No obvious scam wording was detected. That doesn't guarantee it's safe — verify the recruiter through the official company website before sharing personal info.`;
 }
 
 // ---------- Domain alignment helpers ----------
