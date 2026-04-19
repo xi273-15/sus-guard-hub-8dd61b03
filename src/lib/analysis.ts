@@ -3612,6 +3612,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (waybackLookup.floor > 0) {
       score = Math.max(score, waybackLookup.floor);
     }
+    if (osint.floor > 0) {
+      score = Math.max(score, osint.floor);
+    }
     score = Math.max(0, Math.min(100, Math.round(score)));
     const level = levelFor(score);
 
