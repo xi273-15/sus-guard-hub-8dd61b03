@@ -1079,6 +1079,7 @@ async function runTavilyOsint(input: {
       floor: 0,
       whyPoints: [],
       nextSteps: [],
+      impersonationOnly: false,
     };
   }
 
@@ -1095,8 +1096,8 @@ async function runTavilyOsint(input: {
       floor: 0,
       whyPoints: [],
       nextSteps: [],
+      impersonationOnly: false,
     };
-  }
 
   const queries: {
     kind: "consistency" | "recruiter" | "recruiter_scam" | "company_scam" | "domain_scam";
