@@ -200,7 +200,7 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "urgency",
     kind: "scam",
-    weight: 12,
+    weight: 10,
     finding: "Message uses urgency language (e.g. 'urgent', 'immediately', 'asap').",
     reason: "Scammers pressure targets to act fast so there is no time to verify the offer.",
     next_step: "Slow down. Legitimate recruiters are fine with you taking time to verify them.",
@@ -211,7 +211,7 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "offplatform",
     kind: "scam",
-    weight: 18,
+    weight: 20,
     finding: "Message asks you to move the conversation to Telegram, WhatsApp, or Signal.",
     reason:
       "Real recruiters interview on company tools (Zoom, Teams, Google Meet). Off-platform chats hide the scammer's identity.",
@@ -223,7 +223,7 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "payment",
     kind: "scam",
-    weight: 20,
+    weight: 35,
     finding: "Message requests a payment, fee, or deposit from you.",
     reason: "Real employers never ask candidates to pay for a job, training, or onboarding.",
     next_step: "Do not send any money. Any request for payment from a recruiter is a scam.",
@@ -243,7 +243,7 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "check_equipment",
     kind: "scam",
-    weight: 22,
+    weight: 35,
     finding: "Message mentions cashing a check or buying equipment with funds you'll be sent.",
     reason: "This is the classic fake-check scam: the check bounces after you've already spent or forwarded the money.",
     next_step: "Do not deposit any check from this recruiter or buy equipment with funds they send you.",
@@ -265,7 +265,7 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "gift_crypto",
     kind: "scam",
-    weight: 22,
+    weight: 40,
     finding: "Message mentions gift cards or cryptocurrency payments.",
     reason: "No legitimate employer pays salary or expenses in gift cards or crypto. This is a strong scam indicator.",
     next_step: "Do not buy gift cards or send crypto. Cut off contact if they insist.",
@@ -287,7 +287,7 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "sensitive_docs",
     kind: "scam",
-    weight: 18,
+    weight: 35,
     finding: "Message asks for sensitive personal info (SSN, ID, passport, or bank details) early in the process.",
     reason: "Real employers only collect this after a signed offer through an HR portal — not over chat or email.",
     next_step:
@@ -309,7 +309,7 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "high_pay",
     kind: "scam",
-    weight: 10,
+    weight: 12,
     finding: "Message advertises unusually high pay for limited work.",
     reason: "Suspiciously high compensation is a lure. Real salaries match the role and market.",
     next_step:
@@ -321,7 +321,7 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "no_interview",
     kind: "scam",
-    weight: 12,
+    weight: 14,
     finding: "Message offers a job or next step without any real interview process.",
     reason:
       "Real employers interview candidates. Skipping straight to 'you're hired' or 'send your details' is a scam pattern.",
@@ -340,7 +340,7 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "kindly",
     kind: "scam",
-    weight: 5,
+    weight: 8,
     finding: "Message uses scam-pattern wording like 'kindly'.",
     reason: "On its own this is mild, but 'kindly' combined with other red flags is common in recruiter scams.",
     next_step: "Treat as a minor signal — weigh it together with the other findings.",
@@ -353,7 +353,7 @@ const CAUTION_SIGNALS: Signal[] = [
   {
     id: "generic_greeting",
     kind: "caution",
-    weight: 6,
+    weight: 10,
     finding: "Message uses a generic greeting like 'Dear Candidate' instead of your name.",
     reason: "Mass-sent outreach avoids names so it can be reused on many targets.",
     next_step: "Ask the recruiter to confirm which role and which of your skills they're contacting you about.",
@@ -363,7 +363,7 @@ const CAUTION_SIGNALS: Signal[] = [
   {
     id: "vague_role",
     kind: "caution",
-    weight: 7,
+    weight: 8,
     finding: "Message mentions a 'contract role' or 'opportunity' without specifying the actual job.",
     reason: "Real recruiters name the role, team, and seniority. Vague pitches are a mild red flag.",
     next_step: "Ask for the exact job title, team, hiring manager, and a link to the official job posting.",
@@ -412,7 +412,7 @@ const CAUTION_SIGNALS: Signal[] = [
   {
     id: "no_context",
     kind: "caution",
-    weight: 6,
+    weight: 8,
     finding: "Message doesn't reference a role, team, company, or concrete recruiting context.",
     reason: "Lack of specifics is common in mass scam outreach, even when no single phrase is alarming.",
     next_step: "Ask the recruiter to share the company name, role title, and where they found your profile.",
@@ -518,7 +518,7 @@ const POSITIVE_SIGNALS: Signal[] = [
   {
     id: "specific_role",
     kind: "positive",
-    weight: 8,
+    weight: 4,
     finding: "Message references a specific job title or role.",
     reason: "Naming the role suggests the outreach is targeted, not mass-sent.",
     next_step: "Still confirm the role exists on the company's official careers page.",
@@ -527,7 +527,7 @@ const POSITIVE_SIGNALS: Signal[] = [
   {
     id: "company_mention",
     kind: "positive",
-    weight: 6,
+    weight: 3,
     finding: "Message mentions a company name in a natural way.",
     reason: "Real recruiters introduce who they work for and why they're reaching out.",
     next_step: "Cross-check the company name against the recruiter's email domain.",
@@ -538,7 +538,7 @@ const POSITIVE_SIGNALS: Signal[] = [
   {
     id: "normal_next_step",
     kind: "positive",
-    weight: 7,
+    weight: 4,
     finding: "Message proposes a normal next step like a call, intro chat, or interview.",
     reason: "Standard recruiting flow includes scheduling a conversation — not requests for money or IDs.",
     next_step: "If you're interested, propose a time on a verified company calendar tool.",
@@ -547,7 +547,7 @@ const POSITIVE_SIGNALS: Signal[] = [
   {
     id: "recruiting_context",
     kind: "positive",
-    weight: 6,
+    weight: 3,
     finding: "Message references your background or a specific opening.",
     reason: "Real recruiters explain why they reached out and tie the role to your experience.",
     next_step: "Ask for the job description link to confirm the role is publicly posted.",
@@ -556,7 +556,7 @@ const POSITIVE_SIGNALS: Signal[] = [
   {
     id: "professional_tone",
     kind: "positive",
-    weight: 4,
+    weight: 2,
     finding: "Message is reasonably specific and uses a professional sign-off.",
     reason: "Professional structure (greeting, context, sign-off) is typical of real recruiter outreach.",
     next_step: "Tone alone isn't proof — still verify the recruiter through the company's official site.",
@@ -565,9 +565,9 @@ const POSITIVE_SIGNALS: Signal[] = [
 ];
 
 function levelFor(score: number): RiskLevel {
-  if (score >= 75) return "Likely Scam";
-  if (score >= 50) return "High";
-  if (score >= 25) return "Caution";
+  if (score >= 50) return "Likely Scam";
+  if (score >= 30) return "High";
+  if (score >= 15) return "Caution";
   return "Low";
 }
 
@@ -794,8 +794,8 @@ function analyzeDomainAlignment(
       reason:
         "Real recruiters almost always email from their company domain. A Gmail/Outlook/Yahoo address for a corporate role is a meaningful red flag.",
       next_step: `Ask for an email on @${companyRoot} before sharing anything personal. If they refuse, treat the contact as suspicious.`,
-      scoreDelta: 28,
-      floor: 35,
+      scoreDelta: 22,
+      floor: 25,
     };
   }
 
@@ -812,7 +812,7 @@ function analyzeDomainAlignment(
         "When the sender's domain aligns with the company they claim to represent, it's consistent with legitimate recruiter outreach.",
       next_step:
         "Domain alignment is a good sign, but still verify the recruiter on the company's official careers or LinkedIn page.",
-      scoreDelta: -10,
+      scoreDelta: exact ? -8 : -6,
       floor: 0,
     };
   }
@@ -826,8 +826,8 @@ function analyzeDomainAlignment(
       reason:
         "Lookalike domains (extra words, hyphens, or 1–2 character typos of the real company domain) are a classic impersonation tactic. A polished message does not change this.",
       next_step: `Do not reply on this address. Verify the recruiter through the official ${companyRoot} careers page or LinkedIn, and only respond to a genuine @${companyRoot} address.`,
-      scoreDelta: 45,
-      floor: 55,
+      scoreDelta: 32,
+      floor: 40,
     };
   }
 
@@ -839,8 +839,8 @@ function analyzeDomainAlignment(
     reason:
       "When the sender's domain is unrelated to the company they claim to represent, it often indicates impersonation or a scam recruiter using an unrelated address. A professional-sounding message does not cancel this out.",
     next_step: `Don't share personal info. Verify the recruiter through the official ${companyRoot} careers page or LinkedIn before replying.`,
-    scoreDelta: 35,
-    floor: 35,
+    scoreDelta: 28,
+    floor: 30,
   };
 }
 
@@ -1477,8 +1477,8 @@ async function runRdapLookup(input: {
   let nextStep: string | null = null;
 
   if (bucket === "very_new") {
-    scoreDelta = 25;
-    floor = 40;
+    scoreDelta = 22;
+    floor = 30;
     whyPoint = {
       finding: `Sender domain ${lookupDomain} was registered ${ageDays} day${ageDays === 1 ? "" : "s"} ago.`,
       why: interpretation,
@@ -1486,7 +1486,7 @@ async function runRdapLookup(input: {
     };
     nextStep = `Be very cautious — ${lookupDomain} is brand new. Verify the recruiter through the official company website before sharing anything.`;
   } else if (bucket === "new") {
-    scoreDelta = 12;
+    scoreDelta = 16;
     floor = 20;
     whyPoint = {
       finding: `Sender domain ${lookupDomain} is under 90 days old.`,
@@ -1495,14 +1495,14 @@ async function runRdapLookup(input: {
     };
     nextStep = `Treat ${lookupDomain} with caution — it's a recently created domain. Confirm the recruiter through an official, separate channel.`;
   } else if (bucket === "young") {
-    scoreDelta = 4;
+    scoreDelta = 7;
     whyPoint = {
       finding: `Sender domain ${lookupDomain} is under a year old.`,
       why: interpretation,
       severity: "caution",
     };
   } else if (bucket === "established") {
-    scoreDelta = -3;
+    scoreDelta = -4;
     whyPoint = {
       finding: `Sender domain ${lookupDomain} has been registered for years.`,
       why: interpretation,
@@ -1624,7 +1624,7 @@ async function runDnsLookup(input: {
   if (health === "missing") {
     interpretation = `${lookupDomain} has no mail (MX) and no web (A/AAAA) records. A real recruiting domain almost always has both. This is a strong concern, though not proof of malicious intent on its own.`;
     scoreDelta = 18;
-    floor = 30;
+    floor = 25;
     whyPoint = {
       finding: `${lookupDomain} has no MX, A, or AAAA records.`,
       why: interpretation,
@@ -1633,8 +1633,8 @@ async function runDnsLookup(input: {
     nextStep = `Be very cautious — ${lookupDomain} doesn't appear to host normal email or web infrastructure. Verify the recruiter through the official company website.`;
   } else if (health === "minimal") {
     interpretation = `${lookupDomain} has web records but no MX records, meaning it isn't set up to receive email normally. A domain actively sending recruiter mail without MX is a meaningful caution.`;
-    scoreDelta = 12;
-    floor = 20;
+    scoreDelta = 14;
+    floor = 18;
     whyPoint = {
       finding: `${lookupDomain} has no MX records.`,
       why: interpretation,
@@ -1646,7 +1646,10 @@ async function runDnsLookup(input: {
     if (!hasSpf) missing.push("SPF");
     if (!hasDmarc) missing.push("DMARC");
     interpretation = `${lookupDomain} has working email infrastructure (MX${hasA || hasAaaa ? " and web records" : ""}) but is missing ${missing.join(" and ")}. Many small or older domains skip these — it's a mild caution, not proof of fraud.`;
-    scoreDelta = missing.length === 2 ? 5 : 3;
+    // SPF missing on its own is heavier than DMARC alone.
+    if (missing.includes("SPF") && missing.includes("DMARC")) scoreDelta = 14;
+    else if (missing.includes("SPF")) scoreDelta = 10;
+    else scoreDelta = 6;
     whyPoint = {
       finding: `${lookupDomain} is missing ${missing.join(" and ")} record${missing.length === 1 ? "" : "s"}.`,
       why: interpretation,
@@ -1803,7 +1806,7 @@ async function runSafeBrowsing(input: {
           safe_browsing_findings: types,
           safe_browsing_summary: summary,
         },
-        scoreDelta: 25,
+        scoreDelta: 35,
         floor: 60,
         whyPoint: {
           finding: `${rawDomain} is currently flagged by Google Safe Browsing (${human}).`,
@@ -2291,7 +2294,7 @@ async function runWayback(input: {
   if (status === "established") {
     const years = Math.floor((ageDays ?? 0) / 365);
     interpretation = `${rawDomain} has long-standing archive history (~${years} years, ${snapshotCount} snapshots). Consistent with an established, regularly operated website — though not proof on its own.`;
-    scoreDelta = -3;
+    scoreDelta = -4;
     whyPoint = {
       finding: `${rawDomain} has long-standing visible web history (first archived around ${niceFirst}).`,
       why: interpretation,
@@ -2308,7 +2311,7 @@ async function runWayback(input: {
     };
   } else if (status === "thin") {
     interpretation = `${rawDomain} has only thin archive history (about ${ageDays} days, ${snapshotCount} snapshots). Possible for a small or recent site, but worth noting if the company is supposed to be well-established.`;
-    scoreDelta = 4;
+    scoreDelta = 6;
     whyPoint = {
       finding: `${rawDomain} has thin web history (about ${ageDays} days, ${snapshotCount} snapshots).`,
       why: interpretation,
@@ -2316,7 +2319,7 @@ async function runWayback(input: {
     };
   } else if (status === "recent_only") {
     interpretation = `${rawDomain} only appears in archive history very recently (about ${ageDays} day${ageDays === 1 ? "" : "s"} ago). Brand-new sites are normal for new companies, but a recruiter from a supposedly established employer using a brand-new site is a meaningful caution.`;
-    scoreDelta = 8;
+    scoreDelta = 16;
     whyPoint = {
       finding: `${rawDomain} only appears in web archive history very recently (~${ageDays} day${ageDays === 1 ? "" : "s"} ago).`,
       why: interpretation,
@@ -2325,7 +2328,7 @@ async function runWayback(input: {
     nextStep = `Treat ${rawDomain} with extra caution — it has very little visible web history. Verify the company through an independent source.`;
   } else if (status === "none") {
     interpretation = `${rawDomain} has no visible Wayback Machine history. Most working business sites have at least a few snapshots. This is a mild caution, not proof of fraud.`;
-    scoreDelta = 3;
+    scoreDelta = 6;
     whyPoint = {
       finding: `${rawDomain} has no visible Wayback Machine history.`,
       why: interpretation,
@@ -3218,6 +3221,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
           "Sender check (SPF) passed — the email really did come from a server the company allows.",
           "SPF is like a guest list at the door. A 'pass' means the company confirms this email was sent from one of their approved mail servers, which is what you'd expect from a real recruiter.",
         );
+        result.scoreDelta -= 3;
       } else if (spfStatus === "softfail" || spfStatus === "neutral") {
         result.spf = "softfail";
         note(
@@ -3236,8 +3240,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
           "This is like someone showing up claiming to be from a company, but that company's official 'guest list' says they never sent them. It's a strong sign the sender is faking their identity.",
           "Don't trust this sender. Go to the company's real website and contact them directly to check.",
         );
-        result.scoreDelta += 18;
-        result.floor = Math.max(result.floor, 25);
+        result.scoreDelta += 22;
+        result.floor = Math.max(result.floor, 30);
       } else if (spfStatus === "none") {
         result.spf = "none";
         note(
@@ -3262,6 +3266,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
           "Digital signature (DKIM) passed — the email's 'wax seal' matches and wasn't tampered with.",
           "DKIM is a digital wax seal the company stamps onto every email. A pass means the seal is intact, so the message wasn't changed in transit and really came from the company.",
         );
+        result.scoreDelta -= 3;
       } else if (dkimLikelyForwarderBreak) {
         result.dkim = "pass";
         note(
@@ -3280,7 +3285,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
           "Real companies put a digital 'wax seal' on their emails. If the seal is broken or doesn't match, the email was either tampered with or wasn't really sent by that company.",
           "Treat this email as suspicious and contact the company through their official website to confirm.",
         );
-        result.scoreDelta += 16;
+        result.scoreDelta += 18;
         result.floor = Math.max(result.floor, 25);
       } else if (dkimStatus === "none") {
         result.dkim = "none";
@@ -3301,6 +3306,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
           "Anti-impersonation check (DMARC) passed — the email matches the company's own rules for what their real email looks like.",
           "DMARC is the company's own policy that says 'only real emails from us should pass.' A pass here means this message lines up with the company's identity rules, which is what you'd expect from a real recruiter.",
         );
+        result.scoreDelta -= 4;
       } else if (dmarcStatus === "fail") {
         result.dmarc = "fail";
         note(
@@ -3309,7 +3315,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
           "DMARC is the company's own rule that says 'only real emails from us should pass.' When it fails, it usually means someone is trying to impersonate the company to trick you.",
           "Do not trust this sender. Go to the company's official careers page and contact them directly instead.",
         );
-        result.scoreDelta += 22;
+        result.scoreDelta += 25;
         result.floor = Math.max(result.floor, 35);
       } else if (dmarcStatus === "none") {
         result.dmarc = "none";
@@ -3319,7 +3325,13 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
           "Without DMARC, scammers can more easily send emails that look like they're from this company. You can't rely on the sender's name alone.",
           "Be careful and double-check the recruiter through a separate, trusted channel — not by replying to this email.",
         );
-        result.scoreDelta += 8;
+        result.scoreDelta += 10;
+      }
+
+      // Combo bonus: SPF fail + DKIM fail + DMARC fail together = strong identity-deception combo
+      if (result.spf === "fail" && result.dkim === "fail" && result.dmarc === "fail") {
+        result.scoreDelta += 10;
+        result.floor = Math.max(result.floor, 50);
       }
 
       // Outlook-specific: compauth (composite authentication)
@@ -3534,7 +3546,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const matchedCaution: Signal[] = [];
     const matchedPositive: Signal[] = [];
 
-    let score = 10;
+    let score = 5;
     let scamScore = 0;
     let cautionScore = 0;
     let positiveScore = 0;
@@ -3572,11 +3584,45 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     score += ctLookup.scoreDelta;
     score += waybackLookup.scoreDelta;
 
+    // ---------- Combo bonuses ----------
+    // Some signals together are worth more than the sum of their parts.
+    const isPublicEmail = domainCheck.status === "public_email";
+    const isDomainMismatch =
+      domainCheck.status === "mismatch" || domainCheck.status === "lookalike";
+    const hasScammyMessage = matchedScam.length >= 2 || matchedScam.some((s) => s.weight >= 20);
+    const hasOffPlatform = matchedScam.some((s) => s.id === "offplatform");
+    const hasMoneyAsk = matchedScam.some((s) =>
+      ["payment", "check_equipment", "gift_crypto"].includes(s.id),
+    );
+    const hasSensitiveAsk = matchedScam.some((s) => s.id === "sensitive_docs");
+    const hasOsintScam = osint.floor >= 25;
+    const hasLookalike = domainCheck.status === "lookalike";
+    const hasOsintDomainScam = osint.floor >= 45;
+    const hasRecentDomain =
+      rdapLookup.result.ageBucket === "very_new" || rdapLookup.result.ageBucket === "new";
+    const hasThinSite =
+      waybackLookup.result.archive_history_status === "recent_only" ||
+      waybackLookup.result.archive_history_status === "thin" ||
+      waybackLookup.result.archive_history_status === "none";
+    const hasWeakDns =
+      dnsLookup.result.health === "thin" ||
+      dnsLookup.result.health === "minimal" ||
+      dnsLookup.result.health === "missing";
+
+    // domain mismatch + free email provider (impossible — they're exclusive),
+    // so use mismatch + scammy message instead
+    if (isDomainMismatch && hasScammyMessage) score += 10;
+    if (isPublicEmail && hasScammyMessage) score += 10;
+    if (hasMoneyAsk && hasOsintScam) score += 15;
+    if (hasOffPlatform && isDomainMismatch) score += 8;
+    if (hasOsintDomainScam && hasLookalike) score += 15;
+    if (hasRecentDomain && hasThinSite && hasWeakDns) score += 12;
+
     // Cap how much positive wording can lower the score. Strong red flags
     // (high-weight scam signals or domain mismatch/lookalike/public_email)
     // must not be neutralized by a polished message.
     const hasStrongRedFlag =
-      matchedScam.some((s) => s.weight >= 15) ||
+      matchedScam.some((s) => s.weight >= 20) ||
       domainCheck.status === "mismatch" ||
       domainCheck.status === "lookalike" ||
       domainCheck.status === "public_email" ||
@@ -3586,14 +3632,24 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       // OSINT scam evidence (direct fraud reports, multi-hit impersonation
       // warnings, recruiter-name complaints) is also a strong red flag —
       // a polished message must not be allowed to neutralize it.
-      osint.floor >= 25;
-    const positiveCap = hasStrongRedFlag ? 5 : 18;
+      osint.floor >= 25 ||
+      safeBrowsingLookup.floor >= 30;
+    const positiveCap = hasStrongRedFlag ? 4 : 12;
     const positiveDeduction = Math.min(positiveScore, positiveCap);
     score -= positiveDeduction;
 
     if (matchedScam.length === 0 && !hasStrongRedFlag && matchedPositive.length >= 3) {
-      score -= 6;
+      score -= 4;
     }
+
+    // ---------- Combo floors ----------
+    if (hasMoneyAsk) score = Math.max(score, 55);
+    if (hasSensitiveAsk) score = Math.max(score, 55);
+    if (hasOffPlatform && isDomainMismatch) score = Math.max(score, 45);
+    if (isPublicEmail && hasOsintScam) score = Math.max(score, 40);
+    if (headerAuth.dmarc === "fail" && isDomainMismatch) score = Math.max(score, 35);
+    if (hasLookalike) score = Math.max(score, 40);
+    if (osint.floor >= 45) score = Math.max(score, 45);
 
     // Enforce domain-driven minimum risk floor.
     if (domainCheck.floor > 0) {
