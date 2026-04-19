@@ -860,6 +860,8 @@ type TavilyResponse = {
 type OsintInternal = {
   result: OsintResult;
   scoreDelta: number;
+  /** Minimum risk floor enforced by OSINT scam evidence. */
+  floor: number;
   whyPoints: WhyPoint[];
   nextSteps: string[];
 };
@@ -947,6 +949,7 @@ async function runTavilyOsint(input: {
         links: [],
       },
       scoreDelta: 0,
+      floor: 0,
       whyPoints: [],
       nextSteps: [],
     };
@@ -962,14 +965,19 @@ async function runTavilyOsint(input: {
         links: [],
       },
       scoreDelta: 0,
+      floor: 0,
       whyPoints: [],
       nextSteps: [],
     };
   }
 
-  const queries: { kind: "consistency" | "recruiter" | "company_scam" | "domain_scam"; q: string }[] = [];
+  const queries: {
+    kind: "consistency" | "recruiter" | "recruiter_scam" | "company_scam" | "domain_scam";
+    q: string;
+  }[] = [];
   if (recruiter && company) queries.push({ kind: "consistency", q: `${recruiter} ${company}` });
   if (recruiter) queries.push({ kind: "recruiter", q: `${recruiter} recruiter` });
+  if (recruiter) queries.push({ kind: "recruiter_scam", q: `"${recruiter}" scam OR fraud OR "fake recruiter"` });
   if (company) queries.push({ kind: "company_scam", q: `${company} scam` });
   if (domain) queries.push({ kind: "domain_scam", q: `${domain} scam` });
 
@@ -980,9 +988,11 @@ async function runTavilyOsint(input: {
   const whyPoints: WhyPoint[] = [];
   const nextSteps: string[] = [];
   let scoreDelta = 0;
+  let floor = 0;
   let consistencyHits = 0;
   let companyScamHits = 0;
   let domainScamHits = 0;
+  let recruiterScamHits = 0;
   let recruiterLegitHits = 0;
   let totalResults = 0;
 
@@ -990,7 +1000,7 @@ async function runTavilyOsint(input: {
   // company has strong legitimacy signals (so we can phrase real-org mentions
   // as "possible impersonation target" instead of "this company is suspicious").
   type PendingScam = {
-    kind: "company_scam" | "domain_scam";
+    kind: "company_scam" | "domain_scam" | "recruiter_scam";
     subject: string;
     count: number;
     matches: TavilySearchResult[];
@@ -1033,14 +1043,28 @@ async function runTavilyOsint(input: {
         allLinks.push({ title: r.title ?? r.url ?? "Result", url: r.url ?? "" }),
       );
     } else {
+      // recruiter_scam / company_scam / domain_scam — keep only results that
+      // actually contain scam wording AND mention the subject by name. This
+      // filters out generic "scam awareness" articles that just happened to
+      // surface for the query.
+      const subjectLc =
+        kind === "company_scam"
+          ? company.toLowerCase()
+          : kind === "domain_scam"
+            ? domain.toLowerCase()
+            : recruiter.toLowerCase();
       const matches = results.filter((r) => {
         const text = `${r.title ?? ""} ${r.content ?? ""}`.toLowerCase();
-        return SCAM_KEYWORDS.some((k) => text.includes(k));
+        const hasScamWord = SCAM_KEYWORDS.some((k) => text.includes(k));
+        const mentionsSubject = subjectLc.length > 0 && text.includes(subjectLc);
+        return hasScamWord && mentionsSubject;
       });
       if (matches.length > 0) {
-        const subject = kind === "company_scam" ? company : domain;
+        const subject =
+          kind === "company_scam" ? company : kind === "domain_scam" ? domain : recruiter;
         if (kind === "company_scam") companyScamHits += matches.length;
-        else domainScamHits += matches.length;
+        else if (kind === "domain_scam") domainScamHits += matches.length;
+        else recruiterScamHits += matches.length;
         pendingScams.push({ kind, subject, count: matches.length, matches });
       }
     }
@@ -1053,27 +1077,27 @@ async function runTavilyOsint(input: {
   const looksLikeRealOrg = consistencyHits > 0 || recruiterLegitHits > 0;
 
   for (const ps of pendingScams) {
-    const isDomainScam = ps.kind === "domain_scam";
-    // Domain-level scam mentions tied to the exact analyzed domain stay a
-    // strong red flag. Company-name scam mentions on a real org are reframed
-    // as a cautionary impersonation warning.
-    const treatAsImpersonation = !isDomainScam && looksLikeRealOrg;
-
-    if (treatAsImpersonation) {
+    if (ps.kind === "recruiter_scam") {
+      // Direct scam complaints tied to the exact recruiter identity = strong red flag.
+      // Scammers frequently reuse the same name; even one credible hit should raise
+      // the floor meaningfully so it can't be cancelled out by a polished message.
       findings.push(
-        `Public scam warnings mention ${ps.subject} as a possible impersonation target (${ps.count} result${ps.count === 1 ? "" : "s"}).`,
+        `Public scam reports name the recruiter ${ps.subject} directly (${ps.count} result${ps.count === 1 ? "" : "s"}).`,
       );
       whyPoints.push({
-        finding: `Public scam warnings mention ${ps.subject} as a possible impersonation target.`,
-        why: "These results don't mean the organization itself is fraudulent. They suggest scammers may be pretending to represent it. Be extra careful that the recruiter contacting you is genuinely from this organization — verify through its official careers page or a known employee.",
-        severity: "caution",
+        finding: `Scam complaints publicly tied to the recruiter ${ps.subject}.`,
+        why: "Public reports that name this exact recruiter in scam, fraud, or fake-recruiter complaints are a serious red flag. Scammers often reuse identities — if others have flagged this name, treat any further contact as suspicious until you've independently verified the person through the company's official channels.",
+        severity: "bad",
       });
       nextSteps.push(
-        `Confirm through ${ps.subject}'s official website or a known contact that this recruiter actually works there.`,
+        `Open and read the linked public reports about ${ps.subject} before sharing any personal information.`,
       );
-      // Small risk bump only — this is cautionary, not direct fraud evidence.
-      scoreDelta += Math.min(6, 2 + ps.count);
-    } else if (isDomainScam) {
+      nextSteps.push(
+        `Do not share personal or financial information until you've reviewed the public complaints tied to this recruiter.`,
+      );
+      scoreDelta += Math.min(35, 18 + ps.count * 4);
+      floor = Math.max(floor, 55);
+    } else if (ps.kind === "domain_scam") {
       // Decide whether the evidence is "strong and direct" vs. weak/indirect.
       // Strong = the exact domain appears inside the result content/url AND the
       // result is clearly about fraud (not just a warning/impersonation advisory).
@@ -1085,7 +1109,7 @@ async function runTavilyOsint(input: {
         const impersonationContext = /\b(impersonat|warning|beware|advisory|alert|spoof)/.test(text);
         return mentionsDomain && directFraud && !impersonationContext;
       });
-      const strongDirect = directMatches.length > 0 && !looksLikeRealOrg;
+      const strongDirect = directMatches.length > 0;
 
       if (strongDirect) {
         findings.push(
@@ -1093,58 +1117,91 @@ async function runTavilyOsint(input: {
         );
         whyPoints.push({
           finding: `Scam complaints publicly tied to the domain ${ps.subject}.`,
-          why: "When scam reports name the exact domain you're being contacted from, that's a much stronger red flag than mentions of a brand name. It suggests the address itself has a history tied to fraud complaints.",
+          why: "When scam reports name the exact domain you're being contacted from, that's the strongest possible OSINT red flag. The address itself appears to have a public history tied to fraud complaints — verify through completely independent channels before any further contact.",
           severity: "bad",
         });
         nextSteps.push(
-          `Do not reply to ${ps.subject}. Read the public scam reports tied to that domain before taking any action.`,
+          `Do not reply to ${ps.subject}. Open and review the linked public scam reports tied to that domain before taking any action.`,
         );
-        scoreDelta += Math.min(15, 6 + ps.count * 3);
+        nextSteps.push(
+          `Verify the company through its official website (typed manually, not from this email) before continuing.`,
+        );
+        scoreDelta += Math.min(40, 22 + ps.count * 4);
+        floor = Math.max(floor, 60);
       } else {
-        // Indirect / weak / possibly-impersonation evidence — soften the wording
-        // and treat as minor caution rather than a major red flag.
+        // Indirect / weak / possibly-impersonation evidence — still a real signal
+        // worth raising the floor on, but framed as caution rather than proof.
         findings.push(
           `Scam-related public mentions were found near the domain ${ps.subject}, but context is limited.`,
         );
         whyPoints.push({
           finding: `Public results mention ${ps.subject} in scam-related discussions, though context is limited.`,
-          why: "These results are cautionary, not proof that the domain itself is fraudulent. The mentions may reflect impersonation warnings, general advisories, or unrelated references rather than direct evidence that this address is malicious. Verify the recruiter through an official channel before sharing anything.",
+          why: "These results aren't conclusive proof the domain itself is fraudulent, but they are a real signal worth taking seriously. Open the linked sources and read what they actually say before sharing any personal information — public scam mentions tied to the address you're being contacted from should not be ignored.",
           severity: "caution",
         });
         nextSteps.push(
-          `Skim the linked sources to see whether they actually describe ${ps.subject} as malicious, or just mention it in passing.`,
+          `Open the linked sources to see whether they describe ${ps.subject} as malicious before continuing.`,
         );
-        // Small bump only when there are no strong legitimacy signals; if the
-        // org looks legit, keep the overall risk essentially unchanged.
-        scoreDelta += looksLikeRealOrg ? Math.min(3, 1 + Math.floor(ps.count / 2)) : Math.min(6, 2 + ps.count);
+        scoreDelta += looksLikeRealOrg
+          ? Math.min(15, 6 + ps.count * 2)
+          : Math.min(20, 8 + ps.count * 2);
+        floor = Math.max(floor, looksLikeRealOrg ? 25 : 35);
       }
     } else {
-      // No legitimacy signals AND a company-name scam hit — keep cautionary
-      // wording (we still don't want to call the org itself fraudulent).
-      findings.push(
-        `Public web includes scam-related mentions involving ${ps.subject} (${ps.count} result${ps.count === 1 ? "" : "s"}).`,
-      );
-      whyPoints.push({
-        finding: `Scam-related public mentions involving ${ps.subject}.`,
-        why: "These results may describe scams that target this name or that impersonate this organization. They aren't proof the organization itself is fraudulent — but they're a reason to verify the recruiter through an independent, official channel before sharing anything.",
-        severity: "caution",
-      });
-      nextSteps.push(
-        `Verify the recruiter through ${ps.subject}'s official website before sharing any personal info or replying.`,
-      );
-      scoreDelta += Math.min(8, 3 + ps.count);
+      // company_scam
+      const treatAsImpersonation = looksLikeRealOrg;
+      if (treatAsImpersonation) {
+        findings.push(
+          `Public scam warnings mention ${ps.subject} as a possible impersonation target (${ps.count} result${ps.count === 1 ? "" : "s"}).`,
+        );
+        whyPoints.push({
+          finding: `Public scam warnings mention ${ps.subject} as a possible impersonation target.`,
+          why: "These results don't mean the organization itself is fraudulent — they suggest scammers actively pretend to represent it. That makes it especially important to confirm the recruiter contacting you really works there: use the company's official careers page or contact a known employee directly. Open the linked warnings to see what kinds of impersonation tactics have been reported.",
+          severity: "caution",
+        });
+        nextSteps.push(
+          `Open the linked impersonation warnings about ${ps.subject} before responding, then verify the recruiter through the official company website.`,
+        );
+        nextSteps.push(
+          `Do not share personal or financial information until you've confirmed this recruiter genuinely works at ${ps.subject}.`,
+        );
+        // Multi-hit impersonation warnings (3+) are a clear pattern, not noise.
+        scoreDelta += Math.min(20, 6 + ps.count * 2);
+        if (ps.count >= 3) floor = Math.max(floor, 30);
+        else floor = Math.max(floor, 20);
+      } else {
+        // No legitimacy signals AND a company-name scam hit — stronger signal.
+        findings.push(
+          `Public web includes scam-related mentions involving ${ps.subject} (${ps.count} result${ps.count === 1 ? "" : "s"}).`,
+        );
+        whyPoints.push({
+          finding: `Scam-related public mentions involving ${ps.subject}.`,
+          why: "Without independent legitimacy signals for this organization, public scam mentions of its name are a meaningful concern. They could describe the company itself, scammers using its name, or both — open the linked sources and read what they actually say before sharing anything.",
+          severity: "bad",
+        });
+        nextSteps.push(
+          `Open and review the linked public reports about ${ps.subject} before sharing any personal information.`,
+        );
+        nextSteps.push(
+          `Verify the company through completely independent channels (typed-in URL, known employee) before continuing.`,
+        );
+        scoreDelta += Math.min(28, 12 + ps.count * 3);
+        floor = Math.max(floor, 45);
+      }
     }
 
-    ps.matches.slice(0, 2).forEach((r) =>
+    ps.matches.slice(0, 3).forEach((r) =>
       allLinks.push({ title: r.title ?? r.url ?? "Result", url: r.url ?? "" }),
     );
   }
 
-  if (consistencyHits >= 1 && domainScamHits === 0) {
+  // Only credit consistency as "lowering risk" when there's NO scam evidence at all.
+  // Otherwise legitimacy signals just contextualize the impersonation framing —
+  // they don't cancel out direct scam reports.
+  const totalScamHits = companyScamHits + domainScamHits + recruiterScamHits;
+  if (consistencyHits >= 1 && totalScamHits === 0) {
     scoreDelta -= Math.min(8, 3 + consistencyHits);
   }
-
-  const totalScamHits = companyScamHits + domainScamHits;
 
   let summary: string;
   if (totalResults === 0) {
@@ -1155,16 +1212,19 @@ async function runTavilyOsint(input: {
       why: "Some real recruiters and small companies have a thin web footprint. Treat this as 'unknown' rather than proof of a scam — verify through the company's official careers page.",
       severity: "info",
     });
+  } else if (recruiterScamHits > 0) {
+    summary =
+      "Public web reports name this exact recruiter in scam or fraud complaints. This is a serious signal — open and read the linked reports before sharing anything personal.";
   } else if (domainScamHits > 0) {
     summary = looksLikeRealOrg
-      ? "The organization looks legitimate. We found some scam-related public mentions near this domain, but the context is limited and may reflect impersonation warnings rather than direct evidence the domain itself is malicious."
-      : "Public results mention this domain in scam-related discussions. The context isn't always clear, so review the linked sources before deciding — these are cautionary signals, not always proof the domain itself is fraudulent.";
+      ? "Public web includes scam-related mentions tied to this domain. The organization itself shows legitimacy signals, so review the linked sources to see whether the mentions describe direct fraud or impersonation warnings."
+      : "Public results tie this domain to scam-related discussions. Open the linked sources and read them carefully before sharing any personal information — scam mentions tied to the exact contact address are a strong red flag.";
   } else if (companyScamHits > 0 && looksLikeRealOrg) {
     summary =
-      "The organization itself looks legitimate, but public scam warnings mention it as a possible impersonation target. Be extra careful to confirm this recruiter genuinely works there.";
+      "The organization itself looks legitimate, but public scam warnings mention it as a possible impersonation target. Open the linked warnings and confirm this recruiter genuinely works there before continuing.";
   } else if (totalScamHits > 0) {
     summary =
-      "Public results include scam-related mentions involving this name. They don't prove the organization is fraudulent, but it's worth verifying the recruiter through an official channel.";
+      "Public results include scam-related mentions involving this name. Open the linked sources before responding, and verify the recruiter through completely independent channels.";
   } else if (consistencyHits > 0) {
     summary =
       "Public web results are consistent with a real recruiter at this company (e.g. LinkedIn or company pages). This is a small positive signal, not a guarantee.";
@@ -1178,9 +1238,18 @@ async function runTavilyOsint(input: {
     });
   }
 
+  // Whenever any scam evidence was found, surface a clear top-line nudge so the
+  // links in the evidence section aren't treated as decorative.
+  if (totalScamHits > 0) {
+    findings.unshift(
+      "We found public reports worth reviewing before trusting this outreach. Open the links in this section and read what they actually say.",
+    );
+  }
+
   return {
     result: { summary, findings, links: dedupeLinks(allLinks) },
     scoreDelta,
+    floor,
     whyPoints,
     nextSteps,
   };
@@ -3369,6 +3438,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (authFloor > 0) noMsgScore = Math.max(noMsgScore, authFloor);
       if (rdapLookup.floor > 0) noMsgScore = Math.max(noMsgScore, rdapLookup.floor);
       if (dnsLookup.floor > 0) noMsgScore = Math.max(noMsgScore, dnsLookup.floor);
+      if (osint.floor > 0) noMsgScore = Math.max(noMsgScore, osint.floor);
       osint.result.findings.forEach((f) => baseFindings.push(f));
       osint.nextSteps.forEach((s) => baseSteps.push(s));
       if (rdap.available) {
@@ -3512,7 +3582,11 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       domainCheck.status === "public_email" ||
       headerAuth.dmarc === "fail" ||
       headerAuth.spf === "fail" ||
-      headerAuth.dkim === "fail";
+      headerAuth.dkim === "fail" ||
+      // OSINT scam evidence (direct fraud reports, multi-hit impersonation
+      // warnings, recruiter-name complaints) is also a strong red flag —
+      // a polished message must not be allowed to neutralize it.
+      osint.floor >= 25;
     const positiveCap = hasStrongRedFlag ? 5 : 18;
     const positiveDeduction = Math.min(positiveScore, positiveCap);
     score -= positiveDeduction;
@@ -3542,6 +3616,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     }
     if (waybackLookup.floor > 0) {
       score = Math.max(score, waybackLookup.floor);
+    }
+    if (osint.floor > 0) {
+      score = Math.max(score, osint.floor);
     }
     score = Math.max(0, Math.min(100, Math.round(score)));
     const level = levelFor(score);
@@ -3599,6 +3676,14 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       why_it_matters = `${why_it_matters} On the identity side, the sender's email domain aligns with the claimed company, which is consistent with legitimate outreach.`;
     } else if (domainCheck.status === "unverifiable" && (data.recruiterEmail || data.companyDomain)) {
       why_it_matters = `${why_it_matters} Note: we couldn't verify whether the sender's domain aligns with the claimed company.`;
+    }
+    // Prepend an OSINT scam-evidence framing when public reports were found.
+    // This makes sure "Why it matters" reflects that the score is being driven
+    // up by real public evidence — not just by message wording.
+    if (osint.floor >= 50) {
+      why_it_matters = `Public web reports include direct scam complaints tied to this exact recruiter, domain, or company. That is a serious external signal — open and read the linked sources before sharing anything personal. ${why_it_matters}`;
+    } else if (osint.floor >= 25) {
+      why_it_matters = `Public web evidence includes scam-related mentions worth reviewing before trusting this outreach. The signal points to impersonation risk or limited-context scam complaints rather than conclusive proof — open the linked sources and judge them yourself. ${why_it_matters}`;
     }
     // Note: header-auth reasons are NOT appended here — they're surfaced as
     // paired finding/explanation entries in `header_explanations` so the user
