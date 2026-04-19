@@ -1380,12 +1380,22 @@ async function runTavilyOsint(input: {
     );
   }
 
+  // "Impersonation only" = the only OSINT scam evidence was company-name
+  // impersonation warnings about a real org (no direct domain/recruiter fraud
+  // reports). Main scoring uses this to avoid treating it as a strong red flag.
+  const impersonationOnly =
+    looksLikeRealOrg &&
+    companyScamHits > 0 &&
+    domainScamHits === 0 &&
+    recruiterScamHits === 0;
+
   return {
     result: { summary, findings, links: dedupeLinks(allLinks) },
     scoreDelta,
     floor,
     whyPoints,
     nextSteps,
+    impersonationOnly,
   };
 }
 
