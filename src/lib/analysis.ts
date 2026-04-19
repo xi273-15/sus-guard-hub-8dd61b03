@@ -3753,7 +3753,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
 
     const domainIsNegative =
       domainCheck.status === "mismatch" || domainCheck.status === "lookalike" || domainCheck.status === "public_email";
-    const domainIsPositive = domainCheck.status === "match" || domainCheck.status === "subdomain";
+    const domainIsPositive =
+      domainCheck.status === "match" || domainCheck.status === "subdomain" || domainCheck.status === "affiliated";
+    const domainIsAffiliated = domainCheck.status === "affiliated";
 
     const findings: string[] = [];
     if (domainIsNegative && domainCheck.finding) findings.push(domainCheck.finding);
@@ -3842,6 +3844,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     }
 
     // Priority 3: identity / domain deception (only the strongest cases).
+    // Affiliated institutional domains are NOT a deception signal — they're
+    // legitimate same-organization-family relationships.
     if (domainCheck.status === "lookalike") {
       summaryParts.push("The sender's email domain looks like a deceptive lookalike of the claimed organization.");
     } else if (domainCheck.status === "mismatch") {
@@ -3855,7 +3859,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (matchedPositive.some((m) => m.id === "specific_role" || m.id === "natural_company_mention")) {
         reassurances.push("the message itself sounds professional");
       }
-      if (domainIsPositive) {
+      if (domainIsAffiliated) {
+        reassurances.push("the sender domain appears affiliated with the organization");
+      } else if (domainIsPositive) {
         reassurances.push("the sender domain appears tied to the organization");
       }
       if (wayback.archive_history_status === "established" || rdap.ageBucket === "established") {
