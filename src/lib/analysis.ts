@@ -712,7 +712,14 @@ function rootDomain(host: string): string {
   return lastTwo;
 }
 
-type DomainStatus = "match" | "subdomain" | "mismatch" | "lookalike" | "public_email" | "unverifiable";
+type DomainStatus =
+  | "match"
+  | "subdomain"
+  | "affiliated"
+  | "mismatch"
+  | "lookalike"
+  | "public_email"
+  | "unverifiable";
 
 type DomainCheck = {
   status: DomainStatus;
