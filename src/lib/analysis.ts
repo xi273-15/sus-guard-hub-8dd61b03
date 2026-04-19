@@ -3764,7 +3764,10 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
 
     // Cap how much positive wording can lower the score. Strong red flags
     // (high-weight scam signals or domain mismatch/lookalike/public_email)
-    // must not be neutralized by a polished message.
+    // must not be neutralized by a polished message. NOTE: institution-level
+    // impersonation warnings (osint.impersonationOnly) are NOT a strong red
+    // flag — they describe risk to the org, not to this specific outreach.
+    const hasStrongOsintRedFlag = osint.floor >= 25 && !osint.impersonationOnly;
     const hasStrongRedFlag =
       matchedScam.some((s) => s.weight >= 20) ||
       domainCheck.status === "mismatch" ||
@@ -3773,10 +3776,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       headerAuth.dmarc === "fail" ||
       headerAuth.spf === "fail" ||
       headerAuth.dkim === "fail" ||
-      // OSINT scam evidence (direct fraud reports, multi-hit impersonation
-      // warnings, recruiter-name complaints) is also a strong red flag —
-      // a polished message must not be allowed to neutralize it.
-      osint.floor >= 25 ||
+      hasStrongOsintRedFlag ||
       safeBrowsingLookup.floor >= 30;
     const positiveCap = hasStrongRedFlag ? 4 : 12;
     const positiveDeduction = Math.min(positiveScore, positiveCap);
@@ -3786,6 +3786,34 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       score -= 4;
     }
 
+    // Extra "specific outreach looks legitimate" credit. When the recruiter
+    // is publicly tied to the org, the sender domain is the company's (or an
+    // affiliated institutional domain), the message is clean, auth doesn't
+    // fail, and infrastructure is normal — positive identity signals should
+    // outweigh general "this org is sometimes impersonated" warnings.
+    const recruiterTiedToOrg =
+      osint.result.findings.some((f) => /connect|link/i.test(f)) ||
+      // consistencyHits / recruiterLegitHits aren't exposed; use a proxy:
+      osint.result.summary.toLowerCase().includes("consistent with a real recruiter");
+    const cleanIdentity =
+      (domainCheck.status === "match" ||
+        domainCheck.status === "subdomain" ||
+        domainCheck.status === "affiliated") &&
+      matchedScam.length === 0 &&
+      headerAuth.dmarc !== "fail" &&
+      headerAuth.spf !== "fail" &&
+      headerAuth.dkim !== "fail" &&
+      safeBrowsingLookup.floor === 0 &&
+      (rdapLookup.result.ageBucket === "established" ||
+        rdapLookup.result.ageBucket === "young" ||
+        rdapLookup.result.ageBucket === "unknown") &&
+      (waybackLookup.result.archive_history_status === "established" ||
+        waybackLookup.result.archive_history_status === "moderate" ||
+        waybackLookup.result.archive_history_status === "unknown");
+    if (cleanIdentity && (recruiterTiedToOrg || matchedPositive.length >= 2)) {
+      score -= 6;
+    }
+
     // ---------- Combo floors ----------
     if (hasMoneyAsk) score = Math.max(score, 55);
     if (hasSensitiveAsk) score = Math.max(score, 55);
@@ -3793,7 +3821,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (isPublicEmail && hasOsintScam) score = Math.max(score, 40);
     if (headerAuth.dmarc === "fail" && isDomainMismatch) score = Math.max(score, 35);
     if (hasLookalike) score = Math.max(score, 40);
-    if (osint.floor >= 45) score = Math.max(score, 45);
+    if (osint.floor >= 45 && !osint.impersonationOnly) score = Math.max(score, 45);
 
     // Enforce domain-driven minimum risk floor.
     if (domainCheck.floor > 0) {
