@@ -583,34 +583,34 @@ function defaultNextSteps(level: RiskLevel): string[] {
 }
 
 function buildWhyItMatters(level: RiskLevel, scamCount: number, cautionCount: number, positiveCount: number): string {
-  const negCount = scamCount + cautionCount;
+  const hasNeg = scamCount + cautionCount > 0;
 
   if (level === "Likely Scam") {
-    return `We found ${scamCount} strong scam signal${scamCount === 1 ? "" : "s"} in this message. The pattern closely matches known recruiter scams — treat any further contact as fraudulent until proven otherwise.`;
+    return `The message and its surrounding signals match patterns commonly seen in recruiter scams. Treat further contact as untrustworthy until you can independently verify the sender.`;
   }
 
   if (level === "High") {
     const tail = positiveCount
-      ? ` We also noticed ${positiveCount} legitimate-sounding element${positiveCount === 1 ? "" : "s"}, but the scam signals outweigh them.`
+      ? ` Some elements look legitimate, but they don't outweigh the concerning ones.`
       : "";
-    return `We found ${negCount} concerning signal${negCount === 1 ? "" : "s"}. This combination commonly appears in recruiter scams, especially when the sender pressures you or asks for sensitive info.${tail}`;
+    return `Several concerning signals are present. This combination is consistent with recruiter scams, especially where the sender pushes for a quick reply or asks for sensitive information.${tail}`;
   }
 
   if (level === "Caution") {
-    if (positiveCount && negCount) {
-      return `This message has ${positiveCount} legitimate-looking element${positiveCount === 1 ? "" : "s"} (like a specific role or normal next step) but also ${negCount} thing${negCount === 1 ? "" : "s"} worth a second look. It isn't clearly a scam, but verify before sharing anything personal.`;
+    if (positiveCount && hasNeg) {
+      return `Parts of this outreach look legitimate, but other parts are vague or unusual enough to warrant a second look before sharing anything personal.`;
     }
-    if (negCount) {
-      return `We found ${negCount} signal${negCount === 1 ? "" : "s"} worth a second look. The message isn't clearly a scam, but it has wording or vagueness that real recruiters usually avoid.`;
+    if (hasNeg) {
+      return `This message has wording or gaps that real recruiters usually avoid. It isn't clearly a scam, but verify the sender before continuing.`;
     }
-    return "This message is borderline — not clearly safe and not clearly malicious. Verify the recruiter before continuing.";
+    return `This is borderline — not clearly safe and not clearly malicious. Verify the recruiter before continuing.`;
   }
 
   // Low
   if (positiveCount) {
-    return `This message reads like normal recruiter outreach: we found ${positiveCount} legitimacy signal${positiveCount === 1 ? "" : "s"} (such as a specific role, company mention, or normal next step) and no strong scam wording. Still verify the recruiter through the official company website before sharing personal info.`;
+    return `This reads like normal recruiter outreach and contains no strong scam wording. Still verify the recruiter through the official company website before sharing personal info.`;
   }
-  return "We didn't find obvious scam signals in this message. That doesn't guarantee it's safe — always verify the recruiter through the official company website before sharing personal info.";
+  return `No obvious scam wording was detected. That doesn't guarantee it's safe — verify the recruiter through the official company website before sharing personal info.`;
 }
 
 // ---------- Domain alignment helpers ----------
@@ -3745,63 +3745,11 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     // paired finding/explanation entries in `header_explanations` so the user
     // gets a clean per-pointer breakdown instead of a wall of text.
 
-    const summaryParts: string[] = [`This recruiter check scored ${score} out of 100, which is ${level}.`];
-    if (matchedScam.length) {
-      summaryParts.push(
-        `We detected ${matchedScam.length} scam signal${matchedScam.length === 1 ? "" : "s"}: ${matchedScam
-          .map((m) => m.finding.replace(/\.$/, ""))
-          .join("; ")}.`,
-      );
-    } else if (matchedCaution.length) {
-      summaryParts.push(
-        `We didn't find strong scam wording, but ${matchedCaution.length} thing${matchedCaution.length === 1 ? "" : "s"} ${matchedCaution.length === 1 ? "is" : "are"} worth a second look: ${matchedCaution
-          .map((m) => m.finding.replace(/\.$/, ""))
-          .join("; ")}.`,
-      );
-    } else {
-      summaryParts.push("We didn't find obvious scam wording.");
-    }
-    if (matchedPositive.length) {
-      summaryParts.push(
-        `On the positive side, we found ${matchedPositive.length} legitimacy signal${matchedPositive.length === 1 ? "" : "s"}: ${matchedPositive
-          .map((m) => m.finding.replace(/\.$/, ""))
-          .join("; ")}.`,
-      );
-    }
-    if (domainIsNegative) {
-      summaryParts.push(domainCheck.finding!);
-    } else if (domainIsPositive) {
-      summaryParts.push("The sender's email domain aligns with the claimed company.");
-    } else if (domainCheck.status === "unverifiable" && domainCheck.finding && (data.recruiterEmail || data.companyDomain)) {
-      summaryParts.push(domainCheck.finding);
-    }
-    // Email header summary
-    if (headerAuth.explanations.length) {
-      summaryParts.push(
-        `Email header check: ${headerAuth.explanations
-          .map((e) => e.finding.replace(/\.$/, ""))
-          .join("; ")}.`,
-      );
-    }
-    // OSINT / public web evidence
-    if (osint.result.findings.length) {
-      summaryParts.push(
-        `Public web evidence: ${osint.result.summary} ${osint.result.findings
-          .map((f) => f.replace(/\.$/, ""))
-          .join("; ")}.`,
-      );
-    }
-    // Why it matters context
-    summaryParts.push(`Why this matters: ${why_it_matters}`);
-    // Next steps — read all, not just the first
-    const stepsForAudio = Array.from(stepSet).slice(0, 5);
-    if (stepsForAudio.length) {
-      summaryParts.push(
-        `Recommended next steps: ${stepsForAudio
-          .map((s, i) => `${i + 1}. ${s.replace(/\.$/, "")}`)
-          .join(". ")}.`,
-      );
-    }
+    // Note: we no longer build a long subsystem-by-subsystem audio summary here.
+    // A short, prioritized summary is composed at the end of this function so it
+    // can lead with the most concerning signals (OSINT scam evidence, domain
+    // mismatch, scam wording) and only briefly mention reassuring signals.
+    const summaryParts: string[] = [];
 
     // Build per-finding "why this matters" bullets so the user gets a clean,
     // point-by-point breakdown instead of one big paragraph.
@@ -3838,6 +3786,23 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     osint.nextSteps.forEach((s) => {
       if (next_steps.length < 6 && !next_steps.includes(s)) next_steps.push(s);
     });
+    // Guarantee a "review the linked public reports" step whenever any OSINT
+    // scam-related evidence was found, even if the OSINT module didn't emit
+    // its own next-step. This keeps Recommended Next Steps connected to the
+    // public web evidence section.
+    if (osint.floor >= 25) {
+      const reviewStep =
+        osint.floor >= 50
+          ? "Open and read the linked public scam reports before responding or sharing anything personal."
+          : "Open and review the linked public reports tied to this company, recruiter, or domain before trusting this outreach.";
+      if (next_steps.length < 6 && !next_steps.includes(reviewStep)) {
+        next_steps.push(reviewStep);
+      }
+      const verifyStep = "Verify the recruiter through the official company website or a known employee before continuing.";
+      if (next_steps.length < 6 && !next_steps.includes(verifyStep)) {
+        next_steps.push(verifyStep);
+      }
+    }
 
     // RDAP findings, why-point, next step, and audio summary
     if (rdap.available) {
@@ -3963,6 +3928,80 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       }
     }
 
+    // Build a short, prioritized summary: lead with the strongest concern,
+    // give one line of brief context, mention reassuring signals only briefly,
+    // and end with a one-line bottom-line verdict. No score mechanics, no
+    // subsystem-by-subsystem dump.
+    const concernLines: string[] = [];
+    const reassureLines: string[] = [];
+
+    // 1. Strongest concern first.
+    if (osint.floor >= 50) {
+      concernLines.push(
+        "Main concern: public web reports include direct scam complaints tied to this exact recruiter, domain, or company.",
+      );
+    } else if (osint.floor >= 25) {
+      concernLines.push(
+        "Main concern: public web evidence includes scam-related mentions or impersonation warnings worth reviewing before trusting this outreach.",
+      );
+    } else if (domainIsNegative && domainCheck.finding) {
+      concernLines.push(`Main concern: ${domainCheck.finding.replace(/\.$/, "")}.`);
+    } else if (matchedScam.length) {
+      const top = matchedScam[0].finding.replace(/\.$/, "");
+      concernLines.push(`Main concern: ${top.charAt(0).toLowerCase() + top.slice(1)}.`);
+    } else if (safeBrowsing.safe_browsing_status === "flagged") {
+      concernLines.push("Main concern: this site is flagged by Safe Browsing as unsafe.");
+    } else if (matchedCaution.length) {
+      const top = matchedCaution[0].finding.replace(/\.$/, "");
+      concernLines.push(`Worth a second look: ${top.charAt(0).toLowerCase() + top.slice(1)}.`);
+    }
+
+    // 2. One brief secondary concern, if distinct from the lead.
+    if (concernLines.length && osint.floor >= 25 && domainIsNegative && domainCheck.finding) {
+      concernLines.push(`The sender's domain also raises a flag: ${domainCheck.finding.replace(/\.$/, "")}.`);
+    } else if (concernLines.length && matchedScam.length && osint.floor >= 25) {
+      concernLines.push(
+        `The message itself also contains scam-pattern wording (${matchedScam[0].finding.replace(/\.$/, "").toLowerCase()}).`,
+      );
+    }
+
+    // 3. Brief reassuring signals — one short line, no detail.
+    const reassures: string[] = [];
+    if (domainIsPositive) reassures.push("the sender's email domain matches the claimed company");
+    if (matchedPositive.length && !matchedScam.length)
+      reassures.push("the message itself does not contain obvious scam wording");
+    if (wayback.archive_history_status === "established") reassures.push("the website appears established");
+    else if (rdap.ageBucket === "established") reassures.push("the domain has been registered for years");
+    if (reassures.length) {
+      reassureLines.push(
+        `On the other side, ${reassures.slice(0, 2).join(" and ")}.`,
+      );
+    }
+
+    // 4. Bottom-line verdict — short, plain English, no score numbers.
+    let bottomLine = "";
+    if (level === "Likely Scam") {
+      bottomLine = "Bottom line: treat this as a likely scam and do not engage further until you can independently verify the sender.";
+    } else if (level === "High") {
+      bottomLine = "Bottom line: this carries meaningful risk — verify the recruiter through official channels before sharing anything.";
+    } else if (level === "Caution") {
+      bottomLine =
+        osint.floor >= 25
+          ? "Bottom line: this isn't an obvious fake, but the public warning context is enough that the recruiter should be verified carefully before continuing."
+          : "Bottom line: not clearly a scam, but verify the recruiter before sharing anything personal.";
+    } else {
+      bottomLine = "Bottom line: no obvious red flags, but a quick verification through the official company site is still wise before sharing personal info.";
+    }
+
+    // If literally nothing concerning surfaced, lead with a calm one-liner.
+    if (!concernLines.length) {
+      concernLines.push("No strong red flags surfaced across the message, sender domain, or public web evidence.");
+    }
+
+    const audio_summary = [...concernLines, ...reassureLines, bottomLine]
+      .filter(Boolean)
+      .join(" ");
+
     return {
       risk_score: score,
       risk_level: level,
@@ -3970,7 +4009,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       why_it_matters,
       why_points,
       next_steps,
-      audio_summary: summaryParts.join(" "),
+      audio_summary,
       osint_summary: osint.result.summary,
       osint_findings: osint.result.findings,
       osint_links: osint.result.links,
