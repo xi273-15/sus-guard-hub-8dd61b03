@@ -984,6 +984,13 @@ type OsintInternal = {
   floor: number;
   whyPoints: WhyPoint[];
   nextSteps: string[];
+  /**
+   * True when the only OSINT scam evidence is general "this real org is
+   * sometimes impersonated" warnings — NOT direct fraud reports against the
+   * specific recruiter, domain, or company. The main scoring layer treats
+   * this as a mild caution rather than a strong red flag.
+   */
+  impersonationOnly: boolean;
 };
 
 const SCAM_KEYWORDS = [
