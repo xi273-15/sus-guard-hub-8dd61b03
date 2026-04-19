@@ -3928,6 +3928,80 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       }
     }
 
+    // Build a short, prioritized summary: lead with the strongest concern,
+    // give one line of brief context, mention reassuring signals only briefly,
+    // and end with a one-line bottom-line verdict. No score mechanics, no
+    // subsystem-by-subsystem dump.
+    const concernLines: string[] = [];
+    const reassureLines: string[] = [];
+
+    // 1. Strongest concern first.
+    if (osint.floor >= 50) {
+      concernLines.push(
+        "Main concern: public web reports include direct scam complaints tied to this exact recruiter, domain, or company.",
+      );
+    } else if (osint.floor >= 25) {
+      concernLines.push(
+        "Main concern: public web evidence includes scam-related mentions or impersonation warnings worth reviewing before trusting this outreach.",
+      );
+    } else if (domainIsNegative && domainCheck.finding) {
+      concernLines.push(`Main concern: ${domainCheck.finding.replace(/\.$/, "")}.`);
+    } else if (matchedScam.length) {
+      const top = matchedScam[0].finding.replace(/\.$/, "");
+      concernLines.push(`Main concern: ${top.charAt(0).toLowerCase() + top.slice(1)}.`);
+    } else if (safeBrowsing.safe_browsing_status === "flagged") {
+      concernLines.push("Main concern: this site is flagged by Safe Browsing as unsafe.");
+    } else if (matchedCaution.length) {
+      const top = matchedCaution[0].finding.replace(/\.$/, "");
+      concernLines.push(`Worth a second look: ${top.charAt(0).toLowerCase() + top.slice(1)}.`);
+    }
+
+    // 2. One brief secondary concern, if distinct from the lead.
+    if (concernLines.length && osint.floor >= 25 && domainIsNegative && domainCheck.finding) {
+      concernLines.push(`The sender's domain also raises a flag: ${domainCheck.finding.replace(/\.$/, "")}.`);
+    } else if (concernLines.length && matchedScam.length && osint.floor >= 25) {
+      concernLines.push(
+        `The message itself also contains scam-pattern wording (${matchedScam[0].finding.replace(/\.$/, "").toLowerCase()}).`,
+      );
+    }
+
+    // 3. Brief reassuring signals — one short line, no detail.
+    const reassures: string[] = [];
+    if (domainIsPositive) reassures.push("the sender's email domain matches the claimed company");
+    if (matchedPositive.length && !matchedScam.length)
+      reassures.push("the message itself does not contain obvious scam wording");
+    if (wayback.archive_history_status === "established") reassures.push("the website appears established");
+    else if (rdap.ageBucket === "established") reassures.push("the domain has been registered for years");
+    if (reassures.length) {
+      reassureLines.push(
+        `On the other side, ${reassures.slice(0, 2).join(" and ")}.`,
+      );
+    }
+
+    // 4. Bottom-line verdict — short, plain English, no score numbers.
+    let bottomLine = "";
+    if (level === "Likely Scam") {
+      bottomLine = "Bottom line: treat this as a likely scam and do not engage further until you can independently verify the sender.";
+    } else if (level === "High") {
+      bottomLine = "Bottom line: this carries meaningful risk — verify the recruiter through official channels before sharing anything.";
+    } else if (level === "Caution") {
+      bottomLine =
+        osint.floor >= 25
+          ? "Bottom line: this isn't an obvious fake, but the public warning context is enough that the recruiter should be verified carefully before continuing."
+          : "Bottom line: not clearly a scam, but verify the recruiter before sharing anything personal.";
+    } else {
+      bottomLine = "Bottom line: no obvious red flags, but a quick verification through the official company site is still wise before sharing personal info.";
+    }
+
+    // If literally nothing concerning surfaced, lead with a calm one-liner.
+    if (!concernLines.length) {
+      concernLines.push("No strong red flags surfaced across the message, sender domain, or public web evidence.");
+    }
+
+    const audio_summary = [...concernLines, ...reassureLines, bottomLine]
+      .filter(Boolean)
+      .join(" ");
+
     return {
       risk_score: score,
       risk_level: level,
@@ -3935,7 +4009,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       why_it_matters,
       why_points,
       next_steps,
-      audio_summary: summaryParts.join(" "),
+      audio_summary,
       osint_summary: osint.result.summary,
       osint_findings: osint.result.findings,
       osint_links: osint.result.links,
