@@ -29,6 +29,7 @@ import {
   Loader2,
   ExternalLink,
 } from "lucide-react";
+import { ExternalLink as ExtLink } from "@/components/external-link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
