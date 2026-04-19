@@ -4118,9 +4118,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       concernLines.push(
         "Main concern: public web reports include direct scam complaints tied to this exact recruiter, domain, or company.",
       );
-    } else if (osint.floor >= 25) {
+    } else if (osint.floor >= 25 && !osint.impersonationOnly) {
       concernLines.push(
-        "Main concern: public web evidence includes scam-related mentions or impersonation warnings worth reviewing before trusting this outreach.",
+        "Main concern: public web evidence includes scam-related mentions worth reviewing before trusting this outreach.",
       );
     } else if (domainIsNegative && domainCheck.finding) {
       concernLines.push(`Main concern: ${domainCheck.finding.replace(/\.$/, "")}.`);
@@ -4129,15 +4129,21 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       concernLines.push(`Main concern: ${top.charAt(0).toLowerCase() + top.slice(1)}.`);
     } else if (safeBrowsing.safe_browsing_status === "flagged") {
       concernLines.push("Main concern: this site is flagged by Safe Browsing as unsafe.");
+    } else if (osint.impersonationOnly) {
+      // Institution-level impersonation warnings: calm, factual framing.
+      concernLines.push(
+        "Worth noting: this organization is known to be impersonated by scammers in the past, so basic verification of the recruiter is still wise.",
+      );
     } else if (matchedCaution.length) {
       const top = matchedCaution[0].finding.replace(/\.$/, "");
       concernLines.push(`Worth a second look: ${top.charAt(0).toLowerCase() + top.slice(1)}.`);
     }
 
     // 2. One brief secondary concern, if distinct from the lead.
-    if (concernLines.length && osint.floor >= 25 && domainIsNegative && domainCheck.finding) {
+    const osintSecondaryConcern = osint.floor >= 25 && !osint.impersonationOnly;
+    if (concernLines.length && osintSecondaryConcern && domainIsNegative && domainCheck.finding) {
       concernLines.push(`The sender's domain also raises a flag: ${domainCheck.finding.replace(/\.$/, "")}.`);
-    } else if (concernLines.length && matchedScam.length && osint.floor >= 25) {
+    } else if (concernLines.length && matchedScam.length && osintSecondaryConcern) {
       concernLines.push(
         `The message itself also contains scam-pattern wording (${matchedScam[0].finding.replace(/\.$/, "").toLowerCase()}).`,
       );
