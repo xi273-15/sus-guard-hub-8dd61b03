@@ -860,6 +860,8 @@ type TavilyResponse = {
 type OsintInternal = {
   result: OsintResult;
   scoreDelta: number;
+  /** Minimum risk floor enforced by OSINT scam evidence. */
+  floor: number;
   whyPoints: WhyPoint[];
   nextSteps: string[];
 };
@@ -947,6 +949,7 @@ async function runTavilyOsint(input: {
         links: [],
       },
       scoreDelta: 0,
+      floor: 0,
       whyPoints: [],
       nextSteps: [],
     };
@@ -962,14 +965,19 @@ async function runTavilyOsint(input: {
         links: [],
       },
       scoreDelta: 0,
+      floor: 0,
       whyPoints: [],
       nextSteps: [],
     };
   }
 
-  const queries: { kind: "consistency" | "recruiter" | "company_scam" | "domain_scam"; q: string }[] = [];
+  const queries: {
+    kind: "consistency" | "recruiter" | "recruiter_scam" | "company_scam" | "domain_scam";
+    q: string;
+  }[] = [];
   if (recruiter && company) queries.push({ kind: "consistency", q: `${recruiter} ${company}` });
   if (recruiter) queries.push({ kind: "recruiter", q: `${recruiter} recruiter` });
+  if (recruiter) queries.push({ kind: "recruiter_scam", q: `"${recruiter}" scam OR fraud OR "fake recruiter"` });
   if (company) queries.push({ kind: "company_scam", q: `${company} scam` });
   if (domain) queries.push({ kind: "domain_scam", q: `${domain} scam` });
 
