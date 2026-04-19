@@ -3939,9 +3939,10 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (rdapLookup.nextStep && next_steps.length < 6 && !next_steps.includes(rdapLookup.nextStep)) {
       next_steps.push(rdapLookup.nextStep);
     }
-    if (rdap.available) {
-      summaryParts.push(`Domain registration: ${rdap.ageSummary} ${rdap.interpretation}`);
-    }
+    // NOTE: subsystem details (RDAP/DNS/SafeBrowsing/CT/Wayback/recruiter
+    // location/website traffic) are intentionally NOT pushed into summaryParts.
+    // The Summary must stay short — those details belong in Why it Matters,
+    // Recommended Next Steps, and Detailed Findings panels.
 
     // DNS findings, why-point, next step, and audio summary
     if (dns.available) {
@@ -3951,9 +3952,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (dnsLookup.nextStep && next_steps.length < 6 && !next_steps.includes(dnsLookup.nextStep)) {
       next_steps.push(dnsLookup.nextStep);
     }
-    if (dns.available) {
-      summaryParts.push(`DNS and email infrastructure: ${dns.summary}. ${dns.interpretation}`);
-    }
+    // (DNS subsystem details intentionally not pushed into summaryParts.)
 
     // Safe Browsing findings, why-point, next step, and audio summary
     if (safeBrowsing.safe_browsing_status === "flagged") {
@@ -3963,9 +3962,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (safeBrowsingLookup.nextStep && next_steps.length < 6 && !next_steps.includes(safeBrowsingLookup.nextStep)) {
       next_steps.push(safeBrowsingLookup.nextStep);
     }
-    if (safeBrowsing.safe_browsing_status !== "unknown") {
-      summaryParts.push(`Site reputation: ${safeBrowsing.safe_browsing_summary}`);
-    }
+    // (Safe Browsing subsystem details intentionally not pushed into summaryParts.)
 
     // CT findings, why-point, next step, and audio summary
     if (ct.available && ct.certificatesFound) {
@@ -3975,9 +3972,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (ctLookup.nextStep && next_steps.length < 6 && !next_steps.includes(ctLookup.nextStep)) {
       next_steps.push(ctLookup.nextStep);
     }
-    if (ct.available) {
-      summaryParts.push(`Certificate history: ${ct.interpretation}`);
-    }
+    // (Certificate Transparency subsystem details intentionally not pushed into summaryParts.)
 
     // Wayback findings, why-point, next step, and audio summary
     if (wayback.available) {
@@ -3987,9 +3982,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (waybackLookup.nextStep && next_steps.length < 6 && !next_steps.includes(waybackLookup.nextStep)) {
       next_steps.push(waybackLookup.nextStep);
     }
-    if (wayback.available) {
-      summaryParts.push(`Website history: ${wayback.interpretation}`);
-    }
+    // (Wayback subsystem details intentionally not pushed into summaryParts.)
 
     // Recruiter public-location: contextual caution only. Country alone is
     // never proof of fraud, so we only nudge the score when other weak trust
