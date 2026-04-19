@@ -194,18 +194,18 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "urgency",
     kind: "scam",
-    weight: 12,
+    weight: 14,
     finding: "Message uses urgency language (e.g. 'urgent', 'immediately', 'asap').",
     reason: "Scammers pressure targets to act fast so there is no time to verify the offer.",
     next_step: "Slow down. Legitimate recruiters are fine with you taking time to verify them.",
     test: (l) =>
-      hasWord(l, ["urgent", "urgently", "immediately", "asap"]) ||
+      hasWord(l, ["urgent", "urgently", "immediately", "asap", "today"]) ||
       hasAny(l, ["as soon as possible", "right away", "act now", "act fast"]),
   },
   {
     id: "offplatform",
     kind: "scam",
-    weight: 18,
+    weight: 20,
     finding: "Message asks you to move the conversation to Telegram, WhatsApp, or Signal.",
     reason:
       "Real recruiters interview on company tools (Zoom, Teams, Google Meet). Off-platform chats hide the scammer's identity.",
@@ -217,30 +217,38 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "payment",
     kind: "scam",
-    weight: 20,
+    weight: 35,
     finding: "Message requests a payment, fee, or deposit from you.",
-    reason: "Real employers never ask candidates to pay for a job, training, or onboarding.",
-    next_step: "Do not send any money. Any request for payment from a recruiter is a scam.",
+    reason: "Real employers never ask candidates to pay for a job, training, or onboarding. This is one of the strongest scam patterns.",
+    next_step: "Do not send money or pay any fee. Any request for payment from a recruiter is a scam.",
     test: (l) =>
       hasAny(l, [
         "send payment",
+        "send money",
         "pay a fee",
+        "pay the fee",
+        "application fee",
         "processing fee",
         "registration fee",
         "training fee",
         "onboarding fee",
+        "security deposit",
+        "refundable deposit",
         "wire transfer",
         "western union",
         "moneygram",
+        "zelle",
+        "venmo",
+        "cash app",
       ]),
   },
   {
     id: "check_equipment",
     kind: "scam",
-    weight: 22,
+    weight: 38,
     finding: "Message mentions cashing a check or buying equipment with funds you'll be sent.",
     reason: "This is the classic fake-check scam: the check bounces after you've already spent or forwarded the money.",
-    next_step: "Do not deposit any check from this recruiter or buy equipment with funds they send you.",
+    next_step: "Do not cash checks or purchase equipment for a recruiter. The check will bounce after you've spent the money.",
     test: (l) =>
       hasAny(l, [
         "cash the check",
@@ -254,12 +262,14 @@ const SCAM_SIGNALS: Signal[] = [
         "purchase a laptop",
         "home office equipment",
         "office setup",
+        "approved vendor",
+        "preferred vendor",
       ]),
   },
   {
     id: "gift_crypto",
     kind: "scam",
-    weight: 22,
+    weight: 40,
     finding: "Message mentions gift cards or cryptocurrency payments.",
     reason: "No legitimate employer pays salary or expenses in gift cards or crypto. This is a strong scam indicator.",
     next_step: "Do not buy gift cards or send crypto. Cut off contact if they insist.",
@@ -281,11 +291,11 @@ const SCAM_SIGNALS: Signal[] = [
   {
     id: "sensitive_docs",
     kind: "scam",
-    weight: 18,
+    weight: 32,
     finding: "Message asks for sensitive personal info (SSN, ID, passport, or bank details) early in the process.",
     reason: "Real employers only collect this after a signed offer through an HR portal — not over chat or email.",
     next_step:
-      "Do not share your SSN, ID, passport, or bank info until you have a verified offer through the official company portal.",
+      "Do not share banking information, your SSN, ID, or passport until you have a verified offer through the official company portal.",
     test: (l) =>
       hasAny(l, [
         "social security",
@@ -1044,8 +1054,51 @@ async function runTavilyOsint(input: {
   // scammers impersonating that real organization — not the org itself.
   const looksLikeRealOrg = consistencyHits > 0 || recruiterLegitHits > 0;
 
+  // Direct accusation patterns — a public article title or snippet directly
+  // calling the subject (company, recruiter, or domain) a scam/fraud.
+  // These are stronger than generic "may be impersonated" warnings.
+  const DIRECT_ACCUSATION = /\b(scam company|fraud company|scam job|fake recruiter|fake job|is a scam|is a fraud|avoid this company|scam alert|scam warning|reported as scam|fraudulent company|known scam|confirmed scam)\b/i;
+
   for (const ps of pendingScams) {
     const isDomainScam = ps.kind === "domain_scam";
+
+    // Detect DIRECT scam accusations in titles/snippets that name the subject
+    // (e.g. "Acme Corp is a scam company"). This is a much stronger signal
+    // than generic impersonation warnings.
+    const subjectLc = ps.subject.toLowerCase();
+    const directAccusations = ps.matches.filter((r) => {
+      const title = (r.title ?? "").toLowerCase();
+      const snippet = (r.content ?? "").toLowerCase();
+      const titleMentionsSubject = title.includes(subjectLc) || (isDomainScam && title.includes(subjectLc.split(".")[0]));
+      const snippetMentionsSubject = snippet.includes(subjectLc);
+      const titleAccusation = DIRECT_ACCUSATION.test(title);
+      const snippetAccusation = DIRECT_ACCUSATION.test(snippet);
+      // Strong: title directly accuses + names the subject, OR snippet has both
+      return (titleMentionsSubject && titleAccusation) || (snippetMentionsSubject && snippetAccusation);
+    });
+
+    if (directAccusations.length > 0) {
+      // Direct accusation against the exact company / domain / recruiter.
+      // This overrides the impersonation framing entirely.
+      const subjectKind = isDomainScam ? "domain" : "company";
+      findings.push(
+        `Public articles directly describe ${ps.subject} as a scam (${directAccusations.length} report${directAccusations.length === 1 ? "" : "s"}). Open the linked sources before responding.`,
+      );
+      whyPoints.push({
+        finding: `Public reports directly accuse ${ps.subject} of being a scam.`,
+        why: `These are not generic impersonation warnings — the linked articles or reviews directly describe the exact ${subjectKind} as fraudulent. This is one of the strongest external risk signals available.`,
+        severity: "bad",
+      });
+      nextSteps.push(
+        `Open and read the linked scam reports about ${ps.subject} before replying or sharing any information.`,
+      );
+      // Strong score bump — domain-level direct accusations are the heaviest.
+      scoreDelta += isDomainScam ? Math.min(45, 25 + directAccusations.length * 5) : Math.min(35, 18 + directAccusations.length * 4);
+      directAccusations.slice(0, 3).forEach((r) => allLinks.push({ title: r.title ?? r.url ?? "Result", url: r.url ?? "" }));
+      // Skip the impersonation/soft-framing branches below for this subject.
+      continue;
+    }
+
     // Domain-level scam mentions tied to the exact analyzed domain stay a
     // strong red flag. Company-name scam mentions on a real org are reframed
     // as a cautionary impersonation warning.
@@ -1067,8 +1120,6 @@ async function runTavilyOsint(input: {
       scoreDelta += Math.min(6, 2 + ps.count);
     } else if (isDomainScam) {
       // Decide whether the evidence is "strong and direct" vs. weak/indirect.
-      // Strong = the exact domain appears inside the result content/url AND the
-      // result is clearly about fraud (not just a warning/impersonation advisory).
       const domainLc = ps.subject.toLowerCase();
       const directMatches = ps.matches.filter((r) => {
         const text = `${r.url ?? ""} ${r.content ?? ""}`.toLowerCase();
@@ -1091,10 +1142,8 @@ async function runTavilyOsint(input: {
         nextSteps.push(
           `Do not reply to ${ps.subject}. Read the public scam reports tied to that domain before taking any action.`,
         );
-        scoreDelta += Math.min(15, 6 + ps.count * 3);
+        scoreDelta += Math.min(25, 12 + ps.count * 3);
       } else {
-        // Indirect / weak / possibly-impersonation evidence — soften the wording
-        // and treat as minor caution rather than a major red flag.
         findings.push(`Scam-related public mentions were found near the domain ${ps.subject}, but context is limited.`);
         whyPoints.push({
           finding: `Public results mention ${ps.subject} in scam-related discussions, though context is limited.`,
@@ -1104,13 +1153,9 @@ async function runTavilyOsint(input: {
         nextSteps.push(
           `Skim the linked sources to see whether they actually describe ${ps.subject} as malicious, or just mention it in passing.`,
         );
-        // Small bump only when there are no strong legitimacy signals; if the
-        // org looks legit, keep the overall risk essentially unchanged.
         scoreDelta += looksLikeRealOrg ? Math.min(3, 1 + Math.floor(ps.count / 2)) : Math.min(6, 2 + ps.count);
       }
     } else {
-      // No legitimacy signals AND a company-name scam hit — keep cautionary
-      // wording (we still don't want to call the org itself fraudulent).
       findings.push(
         `Public web includes scam-related mentions involving ${ps.subject} (${ps.count} result${ps.count === 1 ? "" : "s"}).`,
       );
@@ -3548,6 +3593,27 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     score += ctLookup.scoreDelta;
     score += waybackLookup.scoreDelta;
 
+    // ---- Combo bonuses for payment-related scam patterns ----
+    // Payment/fee/check/crypto language combined with other scam patterns is
+    // among the strongest signals in the system. Boost meaningfully.
+    const hasPaymentSignal = matchedScam.some(
+      (s) => s.id === "payment" || s.id === "check_equipment" || s.id === "gift_crypto",
+    );
+    const hasUrgency = matchedScam.some((s) => s.id === "urgency");
+    const hasOffPlatform = matchedScam.some((s) => s.id === "offplatform");
+    const hasOsintScam = osint.scoreDelta >= 12;
+
+    if (hasPaymentSignal && hasUrgency) score += 12;
+    if (hasPaymentSignal && hasOffPlatform) score += 18;
+    if (hasPaymentSignal && hasOsintScam) score += 15;
+
+    // Hard floor: any direct payment/fee/check/crypto request is at minimum
+    // High Risk territory regardless of other "polished" signals.
+    let paymentFloor = 0;
+    if (matchedScam.some((s) => s.id === "payment")) paymentFloor = Math.max(paymentFloor, 65);
+    if (matchedScam.some((s) => s.id === "check_equipment")) paymentFloor = Math.max(paymentFloor, 75);
+    if (matchedScam.some((s) => s.id === "gift_crypto")) paymentFloor = Math.max(paymentFloor, 80);
+
     // Cap how much positive wording can lower the score. Strong red flags
     // (high-weight scam signals or domain mismatch/lookalike/public_email)
     // must not be neutralized by a polished message.
@@ -3588,6 +3654,15 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     }
     if (waybackLookup.floor > 0) {
       score = Math.max(score, waybackLookup.floor);
+    }
+    if (paymentFloor > 0) {
+      score = Math.max(score, paymentFloor);
+    }
+    // Direct public scam accusations (very strong osint signal) get their own floor.
+    if (osint.scoreDelta >= 25) {
+      score = Math.max(score, 70);
+    } else if (osint.scoreDelta >= 18) {
+      score = Math.max(score, 55);
     }
     score = Math.max(0, Math.min(100, Math.round(score)));
     const level = levelFor(score);
@@ -3651,6 +3726,21 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     // gets a clean per-pointer breakdown instead of a wall of text.
 
     const summaryParts: string[] = [`This recruiter check scored ${score} out of 100, which is ${level}.`];
+
+    // Surface payment / check / crypto language at the very top of the summary.
+    const paymentMatches = matchedScam.filter(
+      (s) => s.id === "payment" || s.id === "check_equipment" || s.id === "gift_crypto" || s.id === "sensitive_docs",
+    );
+    if (paymentMatches.length) {
+      summaryParts.push(
+        `⚠️ This message contains direct payment- or money-related scam language: ${paymentMatches.map((m) => m.finding.replace(/\.$/, "")).join("; ")}. Do not send money, cash checks, buy equipment, or share banking details.`,
+      );
+    }
+    // Surface direct public scam accusations at the top, too.
+    const directScamFinding = osint.result.findings.find((f) => /directly describe/i.test(f));
+    if (directScamFinding) {
+      summaryParts.push(`⚠️ ${directScamFinding} We found public reports worth reviewing before trusting this outreach.`);
+    }
     if (matchedScam.length) {
       summaryParts.push(
         `We detected ${matchedScam.length} scam signal${matchedScam.length === 1 ? "" : "s"}: ${matchedScam
