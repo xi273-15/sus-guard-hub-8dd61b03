@@ -3786,6 +3786,23 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     osint.nextSteps.forEach((s) => {
       if (next_steps.length < 6 && !next_steps.includes(s)) next_steps.push(s);
     });
+    // Guarantee a "review the linked public reports" step whenever any OSINT
+    // scam-related evidence was found, even if the OSINT module didn't emit
+    // its own next-step. This keeps Recommended Next Steps connected to the
+    // public web evidence section.
+    if (osint.floor >= 25) {
+      const reviewStep =
+        osint.floor >= 50
+          ? "Open and read the linked public scam reports before responding or sharing anything personal."
+          : "Open and review the linked public reports tied to this company, recruiter, or domain before trusting this outreach.";
+      if (next_steps.length < 6 && !next_steps.includes(reviewStep)) {
+        next_steps.push(reviewStep);
+      }
+      const verifyStep = "Verify the recruiter through the official company website or a known employee before continuing.";
+      if (next_steps.length < 6 && !next_steps.includes(verifyStep)) {
+        next_steps.push(verifyStep);
+      }
+    }
 
     // RDAP findings, why-point, next step, and audio summary
     if (rdap.available) {
