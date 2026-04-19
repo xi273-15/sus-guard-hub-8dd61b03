@@ -3593,6 +3593,27 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     score += ctLookup.scoreDelta;
     score += waybackLookup.scoreDelta;
 
+    // ---- Combo bonuses for payment-related scam patterns ----
+    // Payment/fee/check/crypto language combined with other scam patterns is
+    // among the strongest signals in the system. Boost meaningfully.
+    const hasPaymentSignal = matchedScam.some(
+      (s) => s.id === "payment" || s.id === "check_equipment" || s.id === "gift_crypto",
+    );
+    const hasUrgency = matchedScam.some((s) => s.id === "urgency");
+    const hasOffPlatform = matchedScam.some((s) => s.id === "offplatform");
+    const hasOsintScam = osint.scoreDelta >= 12;
+
+    if (hasPaymentSignal && hasUrgency) score += 12;
+    if (hasPaymentSignal && hasOffPlatform) score += 18;
+    if (hasPaymentSignal && hasOsintScam) score += 15;
+
+    // Hard floor: any direct payment/fee/check/crypto request is at minimum
+    // High Risk territory regardless of other "polished" signals.
+    let paymentFloor = 0;
+    if (matchedScam.some((s) => s.id === "payment")) paymentFloor = Math.max(paymentFloor, 65);
+    if (matchedScam.some((s) => s.id === "check_equipment")) paymentFloor = Math.max(paymentFloor, 75);
+    if (matchedScam.some((s) => s.id === "gift_crypto")) paymentFloor = Math.max(paymentFloor, 80);
+
     // Cap how much positive wording can lower the score. Strong red flags
     // (high-weight scam signals or domain mismatch/lookalike/public_email)
     // must not be neutralized by a polished message.
