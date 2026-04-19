@@ -918,6 +918,25 @@ function analyzeDomainAlignment(
     };
   }
 
+  // Affiliated / same-organization-family check runs BEFORE lookalike so that
+  // legitimate institutional pairs like brooklyn.cuny.edu ↔ brooklyn.edu are
+  // not misclassified. Lookalikes that swap the TLD (e.g. brooklyn.cuny.com)
+  // will fail the eTLD check inside isAffiliated and fall through to lookalike.
+  if (isAffiliated(senderDomain, companyDomain, senderRoot, companyRoot)) {
+    return {
+      status: "affiliated",
+      senderDomain,
+      companyDomain,
+      finding: `Recruiter email domain (${senderDomain}) is not identical to the public website domain (${companyDomain}), but it appears to belong to the same institutional/organization family.`,
+      reason:
+        "The two domains share the same top-level domain and a recognizable institutional root, which is a common pattern for legitimate departments, campuses, or member institutions of a larger organization.",
+      next_step:
+        "Treat this as a neutral signal: still confirm the recruiter on the official organization website or directory before sharing personal information.",
+      scoreDelta: -2,
+      floor: 0,
+    };
+  }
+
   if (isLookalike(senderRoot, companyRoot)) {
     return {
       status: "lookalike",
