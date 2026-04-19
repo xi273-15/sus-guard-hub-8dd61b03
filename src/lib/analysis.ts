@@ -353,7 +353,7 @@ const CAUTION_SIGNALS: Signal[] = [
   {
     id: "generic_greeting",
     kind: "caution",
-    weight: 6,
+    weight: 10,
     finding: "Message uses a generic greeting like 'Dear Candidate' instead of your name.",
     reason: "Mass-sent outreach avoids names so it can be reused on many targets.",
     next_step: "Ask the recruiter to confirm which role and which of your skills they're contacting you about.",
@@ -363,7 +363,7 @@ const CAUTION_SIGNALS: Signal[] = [
   {
     id: "vague_role",
     kind: "caution",
-    weight: 7,
+    weight: 8,
     finding: "Message mentions a 'contract role' or 'opportunity' without specifying the actual job.",
     reason: "Real recruiters name the role, team, and seniority. Vague pitches are a mild red flag.",
     next_step: "Ask for the exact job title, team, hiring manager, and a link to the official job posting.",
@@ -412,7 +412,7 @@ const CAUTION_SIGNALS: Signal[] = [
   {
     id: "no_context",
     kind: "caution",
-    weight: 6,
+    weight: 8,
     finding: "Message doesn't reference a role, team, company, or concrete recruiting context.",
     reason: "Lack of specifics is common in mass scam outreach, even when no single phrase is alarming.",
     next_step: "Ask the recruiter to share the company name, role title, and where they found your profile.",
@@ -518,7 +518,7 @@ const POSITIVE_SIGNALS: Signal[] = [
   {
     id: "specific_role",
     kind: "positive",
-    weight: 8,
+    weight: 4,
     finding: "Message references a specific job title or role.",
     reason: "Naming the role suggests the outreach is targeted, not mass-sent.",
     next_step: "Still confirm the role exists on the company's official careers page.",
@@ -527,7 +527,7 @@ const POSITIVE_SIGNALS: Signal[] = [
   {
     id: "company_mention",
     kind: "positive",
-    weight: 6,
+    weight: 3,
     finding: "Message mentions a company name in a natural way.",
     reason: "Real recruiters introduce who they work for and why they're reaching out.",
     next_step: "Cross-check the company name against the recruiter's email domain.",
@@ -538,7 +538,7 @@ const POSITIVE_SIGNALS: Signal[] = [
   {
     id: "normal_next_step",
     kind: "positive",
-    weight: 7,
+    weight: 4,
     finding: "Message proposes a normal next step like a call, intro chat, or interview.",
     reason: "Standard recruiting flow includes scheduling a conversation — not requests for money or IDs.",
     next_step: "If you're interested, propose a time on a verified company calendar tool.",
@@ -547,7 +547,7 @@ const POSITIVE_SIGNALS: Signal[] = [
   {
     id: "recruiting_context",
     kind: "positive",
-    weight: 6,
+    weight: 3,
     finding: "Message references your background or a specific opening.",
     reason: "Real recruiters explain why they reached out and tie the role to your experience.",
     next_step: "Ask for the job description link to confirm the role is publicly posted.",
@@ -556,7 +556,7 @@ const POSITIVE_SIGNALS: Signal[] = [
   {
     id: "professional_tone",
     kind: "positive",
-    weight: 4,
+    weight: 2,
     finding: "Message is reasonably specific and uses a professional sign-off.",
     reason: "Professional structure (greeting, context, sign-off) is typical of real recruiter outreach.",
     next_step: "Tone alone isn't proof — still verify the recruiter through the company's official site.",
@@ -565,9 +565,9 @@ const POSITIVE_SIGNALS: Signal[] = [
 ];
 
 function levelFor(score: number): RiskLevel {
-  if (score >= 75) return "Likely Scam";
-  if (score >= 50) return "High";
-  if (score >= 25) return "Caution";
+  if (score >= 50) return "Likely Scam";
+  if (score >= 30) return "High";
+  if (score >= 15) return "Caution";
   return "Low";
 }
 
