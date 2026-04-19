@@ -1,3 +1,6 @@
+## Architecture
+
+```mermaid
 flowchart TD
     A[User inputs recruiter name, email, company, domain, message, headers] --> B[Suscruit Frontend<br/>Lovable + React + TypeScript + TanStack Start]
     B --> C[Backend Analysis Engine]
@@ -22,3 +25,7 @@ flowchart TD
 
     L --> M[Results UI<br/>risk score, findings, why it matters, next steps]
     L --> N[Accessibility Layer<br/>ElevenLabs voice playback]
+```
+
+Canvas Cloud AI diagram:  
+https://www.canvascloud.ai/view/ztyBCe-A-h
