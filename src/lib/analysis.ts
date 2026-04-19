@@ -717,7 +717,64 @@ function rootDomain(host: string): string {
   return lastTwo;
 }
 
-type DomainStatus = "match" | "subdomain" | "mismatch" | "lookalike" | "public_email" | "unverifiable";
+type DomainStatus = "match" | "subdomain" | "affiliated" | "mismatch" | "lookalike" | "public_email" | "unverifiable";
+
+// Trusted institutional/governmental TLDs where a shared single-label name
+// (e.g. "brooklyn") between sender root and company root strongly suggests
+// the same organization family rather than a coincidence.
+const INSTITUTIONAL_TLDS = new Set([
+  "edu", "gov", "mil",
+  "ac.uk", "gov.uk", "edu.au", "gov.au", "ac.jp", "go.jp",
+  "edu.sg", "gov.sg", "edu.in", "gov.in", "edu.cn", "gov.cn",
+]);
+
+function publicSuffix(host: string): string {
+  const parts = host.split(".");
+  if (parts.length >= 3) {
+    const lastTwo = parts.slice(-2).join(".");
+    if (MULTI_PART_TLDS.has(lastTwo) || INSTITUTIONAL_TLDS.has(lastTwo)) {
+      return lastTwo;
+    }
+  }
+  return parts[parts.length - 1] ?? "";
+}
+
+function isInstitutionalTld(host: string): boolean {
+  const suffix = publicSuffix(host);
+  return INSTITUTIONAL_TLDS.has(suffix);
+}
+
+// Detect "same organization family" relationships, e.g. brooklyn.edu vs
+// brooklyn.cuny.edu, where a shared distinctive single-label name appears
+// in both hosts under trusted institutional TLDs.
+function isLikelyAffiliated(
+  senderHost: string,
+  senderRoot: string,
+  companyHost: string,
+  companyRoot: string,
+): boolean {
+  if (!senderHost || !companyHost) return false;
+  if (senderRoot === companyRoot) return false; // already a match/subdomain
+  // Both must live under trusted institutional/governmental suffixes —
+  // otherwise "shared word" is too easy to spoof commercially.
+  if (!isInstitutionalTld(senderHost) || !isInstitutionalTld(companyHost)) {
+    return false;
+  }
+  const senderLabels = senderHost.split(".");
+  const companyLabels = companyHost.split(".");
+  // Shared distinctive label (length >= 4, not a generic word) appearing in both.
+  const generic = new Set([
+    "mail", "email", "www", "web", "info", "news", "home", "main",
+    "office", "admin", "user", "users", "dept", "department", "school",
+    "college", "university", "edu", "gov", "org", "com", "net",
+  ]);
+  for (const label of senderLabels) {
+    if (label.length < 4) continue;
+    if (generic.has(label)) continue;
+    if (companyLabels.includes(label)) return true;
+  }
+  return false;
+}
 
 type DomainCheck = {
   status: DomainStatus;
