@@ -3852,6 +3852,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     let why_it_matters = buildWhyItMatters(level, matchedScam.length, matchedCaution.length, matchedPositive.length);
     if (domainIsNegative) {
       why_it_matters = `${domainCheck.reason} A polished, professional-sounding message does not cancel a sender/company domain mismatch — scammers can and do write normal-sounding outreach. ${why_it_matters}`;
+    } else if (domainIsAffiliated) {
+      why_it_matters = `${why_it_matters} On the identity side, the sender's email domain isn't identical to the public website, but it appears to belong to the same institutional/organization family — no clear impersonation signal from this domain relationship.`;
     } else if (domainIsPositive) {
       why_it_matters = `${why_it_matters} On the identity side, the sender's email domain aligns with the claimed company, which is consistent with legitimate outreach.`;
     } else if (domainCheck.status === "unverifiable" && (data.recruiterEmail || data.companyDomain)) {
