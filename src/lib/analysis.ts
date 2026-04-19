@@ -3771,7 +3771,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (matchedPositive.some((m) => m.id === "specific_role" || m.id === "natural_company_mention")) {
         reassurances.push("the message itself sounds professional");
       }
-      if (domainIsPositive || domainCheck.status === "affiliated") {
+      if (domainIsPositive) {
         reassurances.push("the sender domain appears tied to the organization");
       }
       if (wayback.archive_history_status === "established" || rdap.ageBucket === "established") {
