@@ -717,7 +717,64 @@ function rootDomain(host: string): string {
   return lastTwo;
 }
 
-type DomainStatus = "match" | "subdomain" | "mismatch" | "lookalike" | "public_email" | "unverifiable";
+type DomainStatus = "match" | "subdomain" | "affiliated" | "mismatch" | "lookalike" | "public_email" | "unverifiable";
+
+// Trusted institutional/governmental TLDs where a shared single-label name
+// (e.g. "brooklyn") between sender root and company root strongly suggests
+// the same organization family rather than a coincidence.
+const INSTITUTIONAL_TLDS = new Set([
+  "edu", "gov", "mil",
+  "ac.uk", "gov.uk", "edu.au", "gov.au", "ac.jp", "go.jp",
+  "edu.sg", "gov.sg", "edu.in", "gov.in", "edu.cn", "gov.cn",
+]);
+
+function publicSuffix(host: string): string {
+  const parts = host.split(".");
+  if (parts.length >= 3) {
+    const lastTwo = parts.slice(-2).join(".");
+    if (MULTI_PART_TLDS.has(lastTwo) || INSTITUTIONAL_TLDS.has(lastTwo)) {
+      return lastTwo;
+    }
+  }
+  return parts[parts.length - 1] ?? "";
+}
+
+function isInstitutionalTld(host: string): boolean {
+  const suffix = publicSuffix(host);
+  return INSTITUTIONAL_TLDS.has(suffix);
+}
+
+// Detect "same organization family" relationships, e.g. brooklyn.edu vs
+// brooklyn.cuny.edu, where a shared distinctive single-label name appears
+// in both hosts under trusted institutional TLDs.
+function isLikelyAffiliated(
+  senderHost: string,
+  senderRoot: string,
+  companyHost: string,
+  companyRoot: string,
+): boolean {
+  if (!senderHost || !companyHost) return false;
+  if (senderRoot === companyRoot) return false; // already a match/subdomain
+  // Both must live under trusted institutional/governmental suffixes —
+  // otherwise "shared word" is too easy to spoof commercially.
+  if (!isInstitutionalTld(senderHost) || !isInstitutionalTld(companyHost)) {
+    return false;
+  }
+  const senderLabels = senderHost.split(".");
+  const companyLabels = companyHost.split(".");
+  // Shared distinctive label (length >= 4, not a generic word) appearing in both.
+  const generic = new Set([
+    "mail", "email", "www", "web", "info", "news", "home", "main",
+    "office", "admin", "user", "users", "dept", "department", "school",
+    "college", "university", "edu", "gov", "org", "com", "net",
+  ]);
+  for (const label of senderLabels) {
+    if (label.length < 4) continue;
+    if (generic.has(label)) continue;
+    if (companyLabels.includes(label)) return true;
+  }
+  return false;
+}
 
 type DomainCheck = {
   status: DomainStatus;
@@ -824,16 +881,43 @@ function analyzeDomainAlignment(
   }
 
   if (isLookalike(senderRoot, companyRoot)) {
+    // Stronger framing when an institutional/governmental root (.edu/.gov/etc.)
+    // is being mimicked by a commercial-looking variant (.com/.net/.co/.info)
+    // that shares the brand name. This is a classic impersonation pattern.
+    const senderSuffix = publicSuffix(senderDomain);
+    const companySuffix = publicSuffix(companyDomain);
+    const commercialSubstitution =
+      INSTITUTIONAL_TLDS.has(companySuffix) && !INSTITUTIONAL_TLDS.has(senderSuffix);
     return {
       status: "lookalike",
       senderDomain,
       companyDomain,
-      finding: `Recruiter email domain (${senderDomain}) looks like a lookalike of the claimed company domain (${companyRoot}).`,
-      reason:
-        "Lookalike domains (extra words, hyphens, or 1–2 character typos of the real company domain) are a classic impersonation tactic. A polished message does not change this.",
+      finding: commercialSubstitution
+        ? `Recruiter email domain (${senderDomain}) resembles ${companyRoot} but uses a different root (.${senderSuffix}) instead of the legitimate .${companySuffix}.`
+        : `Recruiter email domain (${senderDomain}) looks like a lookalike of the claimed company domain (${companyRoot}).`,
+      reason: commercialSubstitution
+        ? "Swapping a trusted institutional root (.edu/.gov/.ac.uk/etc.) for a commercial one (.com/.net/.info) while keeping the brand name is a classic impersonation pattern. The visual similarity is intentional."
+        : "Lookalike domains (extra words, hyphens, or 1–2 character typos of the real company domain) are a classic impersonation tactic. A polished message does not change this.",
       next_step: `Do not reply on this address. Verify the recruiter through the official ${companyRoot} careers page or LinkedIn, and only respond to a genuine @${companyRoot} address.`,
-      scoreDelta: 45,
-      floor: 55,
+      scoreDelta: commercialSubstitution ? 50 : 45,
+      floor: commercialSubstitution ? 65 : 55,
+    };
+  }
+
+  // Affiliated / same-organization-family check (e.g. brooklyn.cuny.edu vs
+  // brooklyn.edu). Only kicks in for trusted institutional/governmental TLDs.
+  if (isLikelyAffiliated(senderDomain, senderRoot, companyDomain, companyRoot)) {
+    return {
+      status: "affiliated",
+      senderDomain,
+      companyDomain,
+      finding: `Recruiter email domain (${senderDomain}) appears affiliated with the claimed organization (${companyDomain}) — different domain, but likely part of the same institutional family.`,
+      reason:
+        "The sender's domain and the claimed organization's domain share a distinctive name under trusted institutional/governmental suffixes (.edu, .gov, .ac.uk, etc.). This is consistent with a real campus/department/member-institution relationship rather than impersonation.",
+      next_step:
+        "Affiliated institutional domains are common and usually legitimate. Still confirm the recruiter on the organization's official directory or careers page.",
+      scoreDelta: -6,
+      floor: 0,
     };
   }
 
@@ -3507,7 +3591,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         domainCheck.finding &&
         domainCheck.reason &&
         domainCheck.status !== "match" &&
-        domainCheck.status !== "subdomain"
+        domainCheck.status !== "subdomain" &&
+        domainCheck.status !== "affiliated"
       ) {
         const sev: WhyPoint["severity"] = noMsgNegative
           ? "bad"
@@ -3515,6 +3600,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
             ? "info"
             : "caution";
         noMsgWhyPoints.push({ finding: domainCheck.finding, why: domainCheck.reason, severity: sev });
+      } else if (domainCheck.status === "affiliated" && domainCheck.finding && domainCheck.reason) {
+        noMsgWhyPoints.push({ finding: domainCheck.finding, why: domainCheck.reason, severity: "good" });
       }
       headerAuth.explanations.forEach((e) => noMsgWhyPoints.push(e));
       osint.whyPoints.forEach((p) => noMsgWhyPoints.push(p));
@@ -3669,7 +3756,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
 
     const domainIsNegative =
       domainCheck.status === "mismatch" || domainCheck.status === "lookalike" || domainCheck.status === "public_email";
-    const domainIsPositive = domainCheck.status === "match" || domainCheck.status === "subdomain";
+    const domainIsPositive =
+      domainCheck.status === "match" || domainCheck.status === "subdomain" || domainCheck.status === "affiliated";
+    const domainIsAffiliated = domainCheck.status === "affiliated";
 
     const findings: string[] = [];
     if (domainIsNegative && domainCheck.finding) findings.push(domainCheck.finding);
@@ -3758,6 +3847,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     }
 
     // Priority 3: identity / domain deception (only the strongest cases).
+    // Affiliated institutional domains are NOT a deception signal — they're
+    // legitimate same-organization-family relationships.
     if (domainCheck.status === "lookalike") {
       summaryParts.push("The sender's email domain looks like a deceptive lookalike of the claimed organization.");
     } else if (domainCheck.status === "mismatch") {
@@ -3771,7 +3862,9 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (matchedPositive.some((m) => m.id === "specific_role" || m.id === "natural_company_mention")) {
         reassurances.push("the message itself sounds professional");
       }
-      if (domainIsPositive) {
+      if (domainIsAffiliated) {
+        reassurances.push("the sender domain appears affiliated with the organization");
+      } else if (domainIsPositive) {
         reassurances.push("the sender domain appears tied to the organization");
       }
       if (wayback.archive_history_status === "established" || rdap.ageBucket === "established") {
@@ -3849,9 +3942,10 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (rdapLookup.nextStep && next_steps.length < 6 && !next_steps.includes(rdapLookup.nextStep)) {
       next_steps.push(rdapLookup.nextStep);
     }
-    if (rdap.available) {
-      summaryParts.push(`Domain registration: ${rdap.ageSummary} ${rdap.interpretation}`);
-    }
+    // NOTE: subsystem details (RDAP/DNS/SafeBrowsing/CT/Wayback/recruiter
+    // location/website traffic) are intentionally NOT pushed into summaryParts.
+    // The Summary must stay short — those details belong in Why it Matters,
+    // Recommended Next Steps, and Detailed Findings panels.
 
     // DNS findings, why-point, next step, and audio summary
     if (dns.available) {
@@ -3861,9 +3955,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (dnsLookup.nextStep && next_steps.length < 6 && !next_steps.includes(dnsLookup.nextStep)) {
       next_steps.push(dnsLookup.nextStep);
     }
-    if (dns.available) {
-      summaryParts.push(`DNS and email infrastructure: ${dns.summary}. ${dns.interpretation}`);
-    }
+    // (DNS subsystem details intentionally not pushed into summaryParts.)
 
     // Safe Browsing findings, why-point, next step, and audio summary
     if (safeBrowsing.safe_browsing_status === "flagged") {
@@ -3873,9 +3965,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (safeBrowsingLookup.nextStep && next_steps.length < 6 && !next_steps.includes(safeBrowsingLookup.nextStep)) {
       next_steps.push(safeBrowsingLookup.nextStep);
     }
-    if (safeBrowsing.safe_browsing_status !== "unknown") {
-      summaryParts.push(`Site reputation: ${safeBrowsing.safe_browsing_summary}`);
-    }
+    // (Safe Browsing subsystem details intentionally not pushed into summaryParts.)
 
     // CT findings, why-point, next step, and audio summary
     if (ct.available && ct.certificatesFound) {
@@ -3885,9 +3975,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (ctLookup.nextStep && next_steps.length < 6 && !next_steps.includes(ctLookup.nextStep)) {
       next_steps.push(ctLookup.nextStep);
     }
-    if (ct.available) {
-      summaryParts.push(`Certificate history: ${ct.interpretation}`);
-    }
+    // (Certificate Transparency subsystem details intentionally not pushed into summaryParts.)
 
     // Wayback findings, why-point, next step, and audio summary
     if (wayback.available) {
@@ -3897,9 +3985,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     if (waybackLookup.nextStep && next_steps.length < 6 && !next_steps.includes(waybackLookup.nextStep)) {
       next_steps.push(waybackLookup.nextStep);
     }
-    if (wayback.available) {
-      summaryParts.push(`Website history: ${wayback.interpretation}`);
-    }
+    // (Wayback subsystem details intentionally not pushed into summaryParts.)
 
     // Recruiter public-location: contextual caution only. Country alone is
     // never proof of fraud, so we only nudge the score when other weak trust
@@ -3926,22 +4012,16 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (otherWeakSignals) {
         score = Math.min(100, score + recruiterLocationLookup.scoreDelta);
       }
-      summaryParts.push(`${recruiterLocation.summary} ${recruiterLocation.caution_note ?? ""}`.trim());
+      // (Recruiter location detail intentionally not pushed into summaryParts.)
       findings.push(
         `Recruiter public location appears to be ${recruiterLocation.recruiter_public_location} — differs from ${recruiterLocation.hiring_context_label}.`,
       );
-    } else if (recruiterLocation.available && recruiterLocation.recruiter_public_location) {
-      summaryParts.push(recruiterLocation.summary);
     }
 
     // Website traffic context: third-party estimates only. Same gating logic
     // as recruiter location — geo mismatch alone is never proof of fraud.
     if (websiteTrafficLookup.whyPoint) why_points.push(websiteTrafficLookup.whyPoint);
-    if (websiteTraffic.traffic_estimate_status !== "unavailable") {
-      summaryParts.push(
-        `Website traffic context: ${websiteTraffic.estimated_visibility_summary} ${websiteTraffic.traffic_context_note}`.trim(),
-      );
-    }
+    // (Website traffic context intentionally not pushed into summaryParts.)
     if (websiteTraffic.geo_mismatch && websiteTrafficLookup.scoreDelta > 0) {
       const otherWeakSignals =
         matchedCaution.length > 0 ||
