@@ -3726,6 +3726,21 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     // gets a clean per-pointer breakdown instead of a wall of text.
 
     const summaryParts: string[] = [`This recruiter check scored ${score} out of 100, which is ${level}.`];
+
+    // Surface payment / check / crypto language at the very top of the summary.
+    const paymentMatches = matchedScam.filter(
+      (s) => s.id === "payment" || s.id === "check_equipment" || s.id === "gift_crypto" || s.id === "sensitive_docs",
+    );
+    if (paymentMatches.length) {
+      summaryParts.push(
+        `⚠️ This message contains direct payment- or money-related scam language: ${paymentMatches.map((m) => m.finding.replace(/\.$/, "")).join("; ")}. Do not send money, cash checks, buy equipment, or share banking details.`,
+      );
+    }
+    // Surface direct public scam accusations at the top, too.
+    const directScamFinding = osint.result.findings.find((f) => /directly describe/i.test(f));
+    if (directScamFinding) {
+      summaryParts.push(`⚠️ ${directScamFinding} We found public reports worth reviewing before trusting this outreach.`);
+    }
     if (matchedScam.length) {
       summaryParts.push(
         `We detected ${matchedScam.length} scam signal${matchedScam.length === 1 ? "" : "s"}: ${matchedScam
