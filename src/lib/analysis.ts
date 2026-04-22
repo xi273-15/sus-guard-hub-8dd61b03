@@ -153,6 +153,42 @@ export type WebsiteTrafficResult = {
   hiring_context_country: string | null;
 };
 
+// ---------- Recruiter identity / public-profile discovery ----------
+
+export type RecruiterIdentityConfidence = "low" | "medium" | "high" | "unknown";
+
+export type RecruiterIdentityMatchTier = "likely" | "possible" | "uncertain";
+
+export type RecruiterPublicProfile = {
+  title: string;
+  url: string;
+  /** linkedin | github | x | facebook | instagram | medium | company_site | recruiter_directory | other */
+  platform: string;
+  /** "high" / "medium" / "low" — how confident we are this profile actually
+   *  belongs to the claimed recruiter, given the surrounding context. */
+  confidence: RecruiterIdentityConfidence;
+  /** Short reason explaining the confidence label (e.g. "Title mentions both
+   *  the recruiter name and the company"). */
+  reason: string;
+  /** likely / possible / uncertain — used to group in the UI. */
+  match_tier: RecruiterIdentityMatchTier;
+};
+
+export type RecruiterIdentityResult = {
+  /** Was a search actually run (recruiter name + Tavily key + at least some context)? */
+  available: boolean;
+  /** Short plain-English summary of what the identity discovery found. */
+  recruiter_identity_summary: string;
+  /** Profiles ranked into likely / possible / uncertain. */
+  recruiter_public_profiles: RecruiterPublicProfile[];
+  /** Free-text public mentions that aren't profile pages (articles, news, posts). */
+  recruiter_public_mentions: string[];
+  /** Overall confidence we have correctly identified the person. */
+  recruiter_identity_confidence: RecruiterIdentityConfidence;
+  /** Caveats / disambiguation notes ("multiple people share this name", etc.). */
+  recruiter_identity_notes: string[];
+};
+
 export type AnalysisResult = {
   risk_score: number;
   risk_level: RiskLevel;
@@ -171,6 +207,7 @@ export type AnalysisResult = {
   wayback: WaybackResult;
   recruiter_location: RecruiterLocationResult;
   website_traffic: WebsiteTrafficResult;
+  recruiter_identity: RecruiterIdentityResult;
 };
 
 type SignalKind = "scam" | "caution" | "positive";
@@ -3203,6 +3240,428 @@ async function runWebsiteTraffic(args: {
   };
 }
 
+// ---------- Deep recruiter identity discovery ----------
+
+function emptyRecruiterIdentity(summary: string): RecruiterIdentityResult {
+  return {
+    available: false,
+    recruiter_identity_summary: summary,
+    recruiter_public_profiles: [],
+    recruiter_public_mentions: [],
+    recruiter_identity_confidence: "unknown",
+    recruiter_identity_notes: [],
+  };
+}
+
+function detectPlatformFromUrl(url: string): string {
+  const u = url.toLowerCase();
+  if (u.includes("linkedin.com")) return "linkedin";
+  if (u.includes("github.com")) return "github";
+  if (u.includes("twitter.com") || u.includes("x.com/")) return "x";
+  if (u.includes("facebook.com")) return "facebook";
+  if (u.includes("instagram.com")) return "instagram";
+  if (u.includes("medium.com")) return "medium";
+  if (u.includes("threads.net")) return "threads";
+  if (u.includes("about.me")) return "about_me";
+  if (u.includes("crunchbase.com")) return "crunchbase";
+  if (u.includes("/team") || u.includes("/staff") || u.includes("/people") || u.includes("/about"))
+    return "company_site";
+  return "other";
+}
+
+function looksLikeProfileUrl(url: string): boolean {
+  const u = url.toLowerCase();
+  return (
+    u.includes("linkedin.com/in/") ||
+    u.includes("github.com/") ||
+    u.includes("twitter.com/") ||
+    u.includes("x.com/") ||
+    u.includes("facebook.com/") ||
+    u.includes("instagram.com/") ||
+    u.includes("medium.com/@") ||
+    u.includes("threads.net/") ||
+    u.includes("about.me/")
+  );
+}
+
+function nameTokens(name: string): string[] {
+  return name
+    .toLowerCase()
+    .split(/\s+/)
+    .map((t) => t.replace(/[^a-z0-9-]/gi, ""))
+    .filter((t) => t.length > 1);
+}
+
+/**
+ * Deep recruiter identity discovery.
+ *
+ * Strategy:
+ *  - Run multiple context-rich Tavily queries combining recruiter name with
+ *    company / domain / LinkedIn / GitHub / staff-page / hiring keywords.
+ *  - Score each result based on how many context tokens it matches in title +
+ *    URL + snippet (recruiter tokens, company tokens, domain tokens, role tokens).
+ *  - Bucket profile-shaped URLs into likely / possible / uncertain.
+ *  - Use the LLM (LOVABLE_API_KEY, gemini-flash) to synthesize a short
+ *    identity summary, an overall confidence label, and disambiguation notes.
+ *  - Fall back to a deterministic summary if the LLM is unavailable.
+ */
+async function runRecruiterIdentity(input: {
+  recruiterName?: string;
+  recruiterEmail?: string;
+  companyName?: string;
+  companyDomain?: string;
+  message?: string;
+  roleLocation?: string;
+}): Promise<RecruiterIdentityResult> {
+  const recruiter = (input.recruiterName ?? "").trim();
+  if (!recruiter) {
+    return emptyRecruiterIdentity(
+      "We didn't run a deep recruiter identity check because no recruiter name was provided.",
+    );
+  }
+
+  const company = (input.companyName ?? "").trim();
+  const domain = (input.companyDomain ?? "")
+    .trim()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "");
+  const senderDomain = (() => {
+    const e = (input.recruiterEmail ?? "").trim();
+    const at = e.indexOf("@");
+    return at >= 0 ? e.slice(at + 1).toLowerCase() : "";
+  })();
+  const role = (() => {
+    // Heuristic: pull a short job-title phrase from the message if present.
+    const m = (input.message ?? "").match(
+      /\b(software|frontend|front-end|backend|back-end|full[- ]stack|data|product|design|marketing|sales|devops|security|engineer|developer|manager|recruiter|analyst|scientist|director|lead)\s+\w{0,12}/i,
+    );
+    return m ? m[0].trim() : "";
+  })();
+
+  const apiKey = process.env.TAVILY_API_KEY;
+  if (!apiKey) {
+    return emptyRecruiterIdentity(
+      "Public-web recruiter identity check is currently unavailable.",
+    );
+  }
+
+  // ---- Build a deep query set (context-rich) ----
+  const q = (s: string) => s.replace(/\s+/g, " ").trim();
+  const queries: string[] = [];
+  const push = (s: string) => {
+    const v = q(s);
+    if (v && !queries.includes(v)) queries.push(v);
+  };
+
+  // Always: profile-shaped searches (use site: for precision).
+  push(`"${recruiter}" site:linkedin.com/in`);
+  push(`"${recruiter}" site:linkedin.com`);
+  if (company) push(`"${recruiter}" "${company}" site:linkedin.com`);
+  push(`"${recruiter}" recruiter`);
+
+  // Context-rich (preferred over name-alone).
+  if (company) {
+    push(`"${recruiter}" "${company}"`);
+    push(`"${recruiter}" recruiter "${company}"`);
+    push(`"${recruiter}" hiring "${company}"`);
+    push(`"${recruiter}" "${company}" team`);
+  }
+  if (domain) push(`"${recruiter}" "${domain}"`);
+  if (senderDomain && senderDomain !== domain) push(`"${recruiter}" "${senderDomain}"`);
+  if (role && company) push(`"${recruiter}" "${company}" "${role}"`);
+
+  // Account-discovery searches across other platforms.
+  push(`"${recruiter}" site:github.com`);
+  push(`"${recruiter}" site:twitter.com OR site:x.com`);
+  push(`"${recruiter}" site:facebook.com`);
+  push(`"${recruiter}" site:medium.com`);
+  push(`"${recruiter}" recruiter staffing`);
+  if (company) push(`"${recruiter}" "${company}" staff OR team OR people`);
+
+  // Deduped, capped (Tavily call cost).
+  const finalQueries = queries.slice(0, 14);
+
+  const responses = await Promise.all(finalQueries.map((qq) => tavilySearch(qq, apiKey)));
+
+  // ---- Score and bucket each result ----
+  const recruiterToks = nameTokens(recruiter);
+  const companyToks = company ? nameTokens(company) : [];
+  const domainTok = domain ? domain.split(".")[0].toLowerCase() : "";
+  const senderDomainTok = senderDomain && senderDomain !== domain ? senderDomain.split(".")[0].toLowerCase() : "";
+  const roleToks = role ? nameTokens(role) : [];
+
+  type Scored = {
+    title: string;
+    url: string;
+    content: string;
+    score: number;
+    matchesRecruiter: boolean;
+    matchesCompany: boolean;
+    matchesDomain: boolean;
+    matchesRole: boolean;
+    isProfile: boolean;
+    platform: string;
+  };
+  const scored: Scored[] = [];
+  const seenUrls = new Set<string>();
+
+  for (const resp of responses) {
+    if (!resp || !resp.results) continue;
+    for (const r of resp.results.slice(0, 5)) {
+      const url = (r.url ?? "").trim();
+      if (!url || seenUrls.has(url)) continue;
+      seenUrls.add(url);
+      const title = (r.title ?? "").trim();
+      const content = (r.content ?? "").trim();
+      const hay = `${title} ${url} ${content}`.toLowerCase();
+
+      const recHits = recruiterToks.filter((t) => hay.includes(t)).length;
+      const matchesRecruiter = recHits >= Math.max(1, Math.min(2, recruiterToks.length));
+      const matchesCompany = companyToks.length > 0 && companyToks.some((t) => hay.includes(t));
+      const matchesDomain =
+        (!!domainTok && hay.includes(domainTok)) || (!!senderDomainTok && hay.includes(senderDomainTok));
+      const matchesRole = roleToks.length > 0 && roleToks.some((t) => hay.includes(t));
+      const isProfile = looksLikeProfileUrl(url);
+      const platform = detectPlatformFromUrl(url);
+
+      let score = 0;
+      score += recHits * 2;
+      if (matchesCompany) score += 4;
+      if (matchesDomain) score += 3;
+      if (matchesRole) score += 2;
+      if (isProfile) score += 3;
+      if (platform === "linkedin") score += 2;
+
+      scored.push({
+        title: title || url,
+        url,
+        content,
+        score,
+        matchesRecruiter,
+        matchesCompany,
+        matchesDomain,
+        matchesRole,
+        isProfile,
+        platform,
+      });
+    }
+  }
+
+  // Filter: must at least mention the recruiter name.
+  const candidates = scored.filter((s) => s.matchesRecruiter);
+
+  // ---- Bucket profiles into likely / possible / uncertain ----
+  const profiles: RecruiterPublicProfile[] = [];
+  const profileCandidates = candidates.filter((s) => s.isProfile);
+  // Sort highest score first.
+  profileCandidates.sort((a, b) => b.score - a.score);
+
+  for (const c of profileCandidates.slice(0, 12)) {
+    let tier: RecruiterIdentityMatchTier;
+    let confidence: RecruiterIdentityConfidence;
+    let reason: string;
+
+    const ctxHits = (c.matchesCompany ? 1 : 0) + (c.matchesDomain ? 1 : 0) + (c.matchesRole ? 1 : 0);
+    if (ctxHits >= 2 || (ctxHits >= 1 && c.platform === "linkedin")) {
+      tier = "likely";
+      confidence = "high";
+      reason =
+        c.matchesCompany && c.matchesDomain
+          ? "Profile context mentions both the recruiter and the claimed company/domain."
+          : c.matchesCompany
+            ? "Profile context mentions the recruiter and the claimed company."
+            : "Profile context mentions the recruiter and the claimed domain or role.";
+    } else if (ctxHits === 1) {
+      tier = "possible";
+      confidence = "medium";
+      reason = "Profile mentions the recruiter and one piece of supporting context.";
+    } else {
+      tier = "uncertain";
+      confidence = "low";
+      reason =
+        "Profile matches the recruiter name only — multiple people may share this name. Verify it is the right person.";
+    }
+
+    profiles.push({
+      title: c.title,
+      url: c.url,
+      platform: c.platform,
+      confidence,
+      reason,
+      match_tier: tier,
+    });
+  }
+
+  // ---- Public mentions (non-profile pages) ----
+  const mentionCandidates = candidates.filter((s) => !s.isProfile).sort((a, b) => b.score - a.score);
+  const mentions: string[] = [];
+  for (const m of mentionCandidates.slice(0, 6)) {
+    const ctxHits = (m.matchesCompany ? 1 : 0) + (m.matchesDomain ? 1 : 0) + (m.matchesRole ? 1 : 0);
+    if (ctxHits === 0) continue; // skip name-only article mentions
+    const snippet = m.content.length > 220 ? `${m.content.slice(0, 220).trim()}…` : m.content;
+    mentions.push(
+      snippet ? `${m.title} — ${snippet} (${m.url})` : `${m.title} (${m.url})`,
+    );
+  }
+
+  // ---- Disambiguation notes ----
+  const notes: string[] = [];
+  const likelyCount = profiles.filter((p) => p.match_tier === "likely").length;
+  const uncertainCount = profiles.filter((p) => p.match_tier === "uncertain").length;
+  const platformCount = new Set(profiles.map((p) => p.platform)).size;
+
+  if (likelyCount === 0 && uncertainCount > 1) {
+    notes.push(
+      "Multiple people appear to share this name — profile matching is uncertain. Verify against the claimed company before trusting.",
+    );
+  }
+  if (likelyCount === 0 && profiles.length === 0) {
+    notes.push(
+      "We didn't find a strong public recruiter profile tied to the claimed company.",
+    );
+  }
+  if (likelyCount > 0 && platformCount === 1 && profiles[0].platform === "linkedin") {
+    notes.push(
+      "Identity evidence is mostly limited to LinkedIn — cross-check against the company's official team page if possible.",
+    );
+  }
+  notes.push(
+    "Always double-check public profile links — search engines can return other people with similar names.",
+  );
+
+  // ---- Overall confidence ----
+  let overall: RecruiterIdentityConfidence;
+  if (likelyCount >= 1) overall = likelyCount >= 2 ? "high" : "medium";
+  else if (profiles.some((p) => p.match_tier === "possible")) overall = "low";
+  else overall = "unknown";
+
+  // ---- Try LLM synthesis (optional, gracefully falls back) ----
+  const synth = await synthesizeRecruiterIdentity({
+    recruiter,
+    company,
+    domain,
+    senderDomain,
+    role,
+    profiles,
+    mentions,
+  });
+
+  const summary =
+    synth?.summary ??
+    (likelyCount > 0
+      ? `We found ${likelyCount} likely public profile${likelyCount === 1 ? "" : "s"} associated with this recruiter, plus ${profiles.length - likelyCount} possible match${profiles.length - likelyCount === 1 ? "" : "es"}.`
+      : profiles.length > 0
+        ? "We found possible public profiles, but identity confidence is limited because the supporting context is thin."
+        : mentions.length > 0
+          ? "We found public mentions of this name in context, but no clear matching profile was located."
+          : "We didn't find a strong public recruiter profile tied to the claimed company.");
+
+  if (synth?.notes) {
+    for (const n of synth.notes) if (n && !notes.includes(n)) notes.push(n);
+  }
+
+  return {
+    available: true,
+    recruiter_identity_summary: summary,
+    recruiter_public_profiles: profiles,
+    recruiter_public_mentions: mentions,
+    recruiter_identity_confidence: synth?.confidence ?? overall,
+    recruiter_identity_notes: notes,
+  };
+}
+
+/**
+ * Optional LLM pass that synthesizes a tighter identity summary,
+ * confidence label, and 1-2 disambiguation notes. Falls back gracefully.
+ */
+async function synthesizeRecruiterIdentity(args: {
+  recruiter: string;
+  company: string;
+  domain: string;
+  senderDomain: string;
+  role: string;
+  profiles: RecruiterPublicProfile[];
+  mentions: string[];
+}): Promise<{ summary: string; confidence: RecruiterIdentityConfidence; notes: string[] } | null> {
+  const apiKey = process.env.LOVABLE_API_KEY;
+  if (!apiKey) return null;
+  if (args.profiles.length === 0 && args.mentions.length === 0) return null;
+
+  const profilesBlock = args.profiles
+    .slice(0, 8)
+    .map(
+      (p) =>
+        `- [${p.platform}] (${p.match_tier}/${p.confidence}) ${p.title} — ${p.url} :: ${p.reason}`,
+    )
+    .join("\n");
+  const mentionsBlock = args.mentions.slice(0, 4).map((m) => `- ${m}`).join("\n");
+
+  try {
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-lite",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You synthesize recruiter identity discovery results into a SHORT, calm, plain-English summary for a non-technical user. " +
+              "Rules: max 2 sentences for summary. Never claim a profile belongs to the recruiter unless context strongly supports it. " +
+              "If multiple people share the name, say so. Return ONLY JSON with shape " +
+              '{"summary":string,"confidence":"low"|"medium"|"high"|"unknown","notes":string[]}.',
+          },
+          {
+            role: "user",
+            content:
+              `Recruiter: ${args.recruiter}\n` +
+              `Claimed company: ${args.company || "—"}\n` +
+              `Company domain: ${args.domain || "—"}\n` +
+              `Sender email domain: ${args.senderDomain || "—"}\n` +
+              `Likely role: ${args.role || "—"}\n\n` +
+              `Profiles found:\n${profilesBlock || "(none)"}\n\n` +
+              `Other public mentions:\n${mentionsBlock || "(none)"}\n\n` +
+              `Return JSON only.`,
+          },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+      }),
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      choices?: { message?: { content?: string } }[];
+    };
+    const raw = json.choices?.[0]?.message?.content;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      summary?: string;
+      confidence?: string;
+      notes?: unknown;
+    };
+    const conf: RecruiterIdentityConfidence =
+      parsed.confidence === "low" ||
+      parsed.confidence === "medium" ||
+      parsed.confidence === "high"
+        ? parsed.confidence
+        : "unknown";
+    const notes = Array.isArray(parsed.notes)
+      ? parsed.notes.filter((n): n is string => typeof n === "string").slice(0, 3)
+      : [];
+    return {
+      summary: typeof parsed.summary === "string" && parsed.summary.trim() ? parsed.summary.trim() : "",
+      confidence: conf,
+      notes,
+    };
+  } catch (err) {
+    console.warn("synthesizeRecruiterIdentity failed:", err);
+    return null;
+  }
+}
+
 export const analyzeRecruiter = createServerFn({ method: "POST" })
   .inputValidator((input: AnalysisInput) => input)
   .handler(async ({ data }): Promise<AnalysisResult> => {
@@ -3243,7 +3702,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
 
     // Recruiter public-location + Website traffic context (run in parallel,
     // both depend on Tavily + RDAP being done).
-    const [recruiterLocationLookup, websiteTrafficLookup] = await Promise.all([
+    const [recruiterLocationLookup, websiteTrafficLookup, recruiterIdentity] = await Promise.all([
       runRecruiterLocation({
         recruiterName: data.recruiterName,
         companyName: data.companyName,
@@ -3258,6 +3717,14 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         companyDomain: data.companyDomain,
         roleLocation: data.roleLocation,
         rdapCountry: rdap.registrantCountry,
+      }),
+      runRecruiterIdentity({
+        recruiterName: data.recruiterName,
+        recruiterEmail: data.recruiterEmail,
+        companyName: data.companyName,
+        companyDomain: data.companyDomain,
+        message: data.message,
+        roleLocation: data.roleLocation,
       }),
     ]);
     const recruiterLocation = recruiterLocationLookup.result;
@@ -3662,6 +4129,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         wayback,
         recruiter_location: recruiterLocation,
         website_traffic: websiteTraffic,
+        recruiter_identity: recruiterIdentity,
       };
     }
 
@@ -4094,5 +4562,6 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       wayback,
       recruiter_location: recruiterLocation,
       website_traffic: websiteTraffic,
+      recruiter_identity: recruiterIdentity,
     };
   });

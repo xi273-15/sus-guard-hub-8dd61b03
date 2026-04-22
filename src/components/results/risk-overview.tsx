@@ -192,6 +192,17 @@ export function RiskOverview({
   const c = 2 * Math.PI * r;
   const dash = (animated / 100) * c;
 
+  // Score-driven ring color: low score = green (safe), high score = red (scam).
+  // This is independent of the theme primary so the meter always reads the
+  // same direction regardless of palette.
+  function ringColorForScore(s: number): string {
+    if (s < 25) return "#10b981"; // emerald — safe
+    if (s < 50) return "#f59e0b"; // amber  — caution
+    if (s < 75) return "#fb923c"; // orange — high
+    return "#f43f5e"; // rose — likely scam
+  }
+  const ringColor = ringColorForScore(score);
+
   const loc = result.recruiter_location;
   const traffic = result.website_traffic;
   const voiceText =
@@ -230,12 +241,6 @@ export function RiskOverview({
           aria-label={`Risk score ${result.risk_score} out of 100, ${result.risk_level}`}
         >
           <svg width={size} height={size} className="-rotate-90">
-            <defs>
-              <linearGradient id="risk-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="var(--primary)" />
-                <stop offset="100%" stopColor={tokens.ring} />
-              </linearGradient>
-            </defs>
             <circle
               cx={size / 2}
               cy={size / 2}
@@ -248,12 +253,15 @@ export function RiskOverview({
               cx={size / 2}
               cy={size / 2}
               r={r}
-              stroke="url(#risk-grad)"
+              stroke={ringColor}
               strokeWidth={stroke}
               strokeLinecap="round"
               fill="none"
               strokeDasharray={`${dash} ${c}`}
-              style={{ transition: "stroke-dasharray 900ms cubic-bezier(0.2, 0.8, 0.2, 1)" }}
+              style={{
+                transition:
+                  "stroke-dasharray 900ms cubic-bezier(0.2, 0.8, 0.2, 1), stroke 400ms ease",
+              }}
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
