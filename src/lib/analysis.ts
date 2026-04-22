@@ -153,6 +153,42 @@ export type WebsiteTrafficResult = {
   hiring_context_country: string | null;
 };
 
+// ---------- Recruiter identity / public-profile discovery ----------
+
+export type RecruiterIdentityConfidence = "low" | "medium" | "high" | "unknown";
+
+export type RecruiterIdentityMatchTier = "likely" | "possible" | "uncertain";
+
+export type RecruiterPublicProfile = {
+  title: string;
+  url: string;
+  /** linkedin | github | x | facebook | instagram | medium | company_site | recruiter_directory | other */
+  platform: string;
+  /** "high" / "medium" / "low" — how confident we are this profile actually
+   *  belongs to the claimed recruiter, given the surrounding context. */
+  confidence: RecruiterIdentityConfidence;
+  /** Short reason explaining the confidence label (e.g. "Title mentions both
+   *  the recruiter name and the company"). */
+  reason: string;
+  /** likely / possible / uncertain — used to group in the UI. */
+  match_tier: RecruiterIdentityMatchTier;
+};
+
+export type RecruiterIdentityResult = {
+  /** Was a search actually run (recruiter name + Tavily key + at least some context)? */
+  available: boolean;
+  /** Short plain-English summary of what the identity discovery found. */
+  recruiter_identity_summary: string;
+  /** Profiles ranked into likely / possible / uncertain. */
+  recruiter_public_profiles: RecruiterPublicProfile[];
+  /** Free-text public mentions that aren't profile pages (articles, news, posts). */
+  recruiter_public_mentions: string[];
+  /** Overall confidence we have correctly identified the person. */
+  recruiter_identity_confidence: RecruiterIdentityConfidence;
+  /** Caveats / disambiguation notes ("multiple people share this name", etc.). */
+  recruiter_identity_notes: string[];
+};
+
 export type AnalysisResult = {
   risk_score: number;
   risk_level: RiskLevel;
@@ -171,6 +207,7 @@ export type AnalysisResult = {
   wayback: WaybackResult;
   recruiter_location: RecruiterLocationResult;
   website_traffic: WebsiteTrafficResult;
+  recruiter_identity: RecruiterIdentityResult;
 };
 
 type SignalKind = "scam" | "caution" | "positive";
