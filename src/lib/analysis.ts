@@ -4129,6 +4129,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         wayback,
         recruiter_location: recruiterLocation,
         website_traffic: websiteTraffic,
+        recruiter_identity: recruiterIdentity,
       };
     }
 
@@ -4561,5 +4562,6 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       wayback,
       recruiter_location: recruiterLocation,
       website_traffic: websiteTraffic,
+      recruiter_identity: recruiterIdentity,
     };
   });
