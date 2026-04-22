@@ -689,6 +689,8 @@ function ResultsView({
 
         {/* Public location moved to the Risk overview panel as a context signal. */}
 
+        <RecruiterIdentitySection identity={result.recruiter_identity} />
+
         <FindingSection title="Public information found">
           {split.recruiter.findings.length > 0 || split.recruiter.links.length > 0 ? (
             <>
