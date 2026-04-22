@@ -49,6 +49,8 @@ import type {
   SafeBrowsingResult,
   CtResult,
   WaybackResult,
+  RecruiterIdentityResult,
+  RecruiterPublicProfile,
 } from "@/lib/analysis";
 import { analyzeRecruiter, type AnalysisResult } from "@/lib/analysis";
 import { FloatingAudioAssistant } from "@/components/floating-audio-assistant";
@@ -748,6 +750,165 @@ function formatDate(iso: string | null): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+// ----- Recruiter identity (deep OSINT) section -----
+
+function platformLabel(p: string): string {
+  switch (p) {
+    case "linkedin":
+      return "LinkedIn";
+    case "github":
+      return "GitHub";
+    case "x":
+      return "X / Twitter";
+    case "facebook":
+      return "Facebook";
+    case "instagram":
+      return "Instagram";
+    case "medium":
+      return "Medium";
+    case "threads":
+      return "Threads";
+    case "about_me":
+      return "About.me";
+    case "crunchbase":
+      return "Crunchbase";
+    case "company_site":
+      return "Company / staff page";
+    default:
+      return "Other";
+  }
+}
+
+function confidenceClass(c: RecruiterIdentityResult["recruiter_identity_confidence"]): string {
+  switch (c) {
+    case "high":
+      return "text-emerald-500 border-emerald-500/30 bg-emerald-500/10";
+    case "medium":
+      return "text-amber-500 border-amber-500/30 bg-amber-500/10";
+    case "low":
+      return "text-orange-500 border-orange-500/30 bg-orange-500/10";
+    default:
+      return "border-border/60 bg-background/60 text-muted-foreground";
+  }
+}
+
+function ProfileList({
+  title,
+  profiles,
+}: {
+  title: string;
+  profiles: RecruiterPublicProfile[];
+}) {
+  if (profiles.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      <h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </h5>
+      <ul className="space-y-2">
+        {profiles.map((p, i) => (
+          <li
+            key={i}
+            className="rounded-lg border border-border/50 bg-background/50 p-2.5"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <span className="rounded-full border border-border/60 bg-card/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-foreground/85">
+                {platformLabel(p.platform)}
+              </span>
+              <span
+                className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${confidenceClass(p.confidence)}`}
+              >
+                {p.confidence}
+              </span>
+            </div>
+            <div className="mt-1.5">
+              <ExtLink href={p.url} title={p.title} />
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              {p.reason}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function RecruiterIdentitySection({
+  identity,
+}: {
+  identity: RecruiterIdentityResult;
+}) {
+  if (!identity.available) return null;
+
+  const likely = identity.recruiter_public_profiles.filter(
+    (p) => p.match_tier === "likely",
+  );
+  const possible = identity.recruiter_public_profiles.filter(
+    (p) => p.match_tier === "possible",
+  );
+  const uncertain = identity.recruiter_public_profiles.filter(
+    (p) => p.match_tier === "uncertain",
+  );
+
+  const hasAnything =
+    identity.recruiter_public_profiles.length > 0 ||
+    identity.recruiter_public_mentions.length > 0;
+
+  return (
+    <FindingSection title="Recruiter identity discovery">
+      <div className="space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-sm leading-relaxed text-foreground/90">
+            {identity.recruiter_identity_summary}
+          </p>
+          <span
+            className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${confidenceClass(identity.recruiter_identity_confidence)}`}
+            title="Overall identity confidence"
+          >
+            {identity.recruiter_identity_confidence}
+          </span>
+        </div>
+
+        {hasAnything && (
+          <div className="space-y-4">
+            <ProfileList title="Likely profiles" profiles={likely} />
+            <ProfileList title="Possible profiles" profiles={possible} />
+            <ProfileList title="Uncertain / name-only matches" profiles={uncertain} />
+
+            {identity.recruiter_public_mentions.length > 0 && (
+              <div className="space-y-2">
+                <h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Public mentions
+                </h5>
+                <ul className="space-y-1.5">
+                  {identity.recruiter_public_mentions.map((m, i) => (
+                    <li
+                      key={i}
+                      className="flex gap-2 text-xs leading-relaxed text-foreground/85"
+                    >
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                      <span>{m}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {identity.recruiter_identity_notes.length > 0 && (
+          <ul className="space-y-1 rounded-lg border border-border/50 bg-background/40 p-3 text-xs italic leading-relaxed text-muted-foreground">
+            {identity.recruiter_identity_notes.map((n, i) => (
+              <li key={i}>• {n}</li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </FindingSection>
+  );
 }
 
 function RdapCardBody({ rdap }: { rdap: RdapResult }) {
