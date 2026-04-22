@@ -3702,7 +3702,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
 
     // Recruiter public-location + Website traffic context (run in parallel,
     // both depend on Tavily + RDAP being done).
-    const [recruiterLocationLookup, websiteTrafficLookup] = await Promise.all([
+    const [recruiterLocationLookup, websiteTrafficLookup, recruiterIdentity] = await Promise.all([
       runRecruiterLocation({
         recruiterName: data.recruiterName,
         companyName: data.companyName,
@@ -3717,6 +3717,14 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         companyDomain: data.companyDomain,
         roleLocation: data.roleLocation,
         rdapCountry: rdap.registrantCountry,
+      }),
+      runRecruiterIdentity({
+        recruiterName: data.recruiterName,
+        recruiterEmail: data.recruiterEmail,
+        companyName: data.companyName,
+        companyDomain: data.companyDomain,
+        message: data.message,
+        roleLocation: data.roleLocation,
       }),
     ]);
     const recruiterLocation = recruiterLocationLookup.result;
