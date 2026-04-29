@@ -4661,6 +4661,12 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       if (recruiterLocationLookup.whyPoint) noMsgWhyPoints.push(recruiterLocationLookup.whyPoint);
       if (websiteTrafficLookup.whyPoint) noMsgWhyPoints.push(websiteTrafficLookup.whyPoint);
 
+      const noMsgLinkIntegrity = analyzeLinkIntegrity({
+        message: "",
+        companyDomain: data.companyDomain,
+        senderDomain: domainCheck.senderDomain,
+      });
+
       return {
         risk_score: noMsgScore,
         risk_level: noMsgLevel,
@@ -4684,6 +4690,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         recruiter_location: recruiterLocation,
         website_traffic: websiteTraffic,
         recruiter_identity: recruiterIdentity,
+        link_integrity: noMsgLinkIntegrity,
       };
     }
 
