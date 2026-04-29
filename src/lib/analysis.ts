@@ -4102,6 +4102,8 @@ type SynthesisInput = {
     positiveFindings: string[];
     osintDirectScam?: string;
     paymentRequested: boolean;
+    legitimateSenderUnsafeCta?: boolean;
+    ctaProvided?: boolean;
   };
   modules: {
     rdap: { age: string; summary: string };
