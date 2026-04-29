@@ -5165,8 +5165,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     const senderClean =
       (domainCheck.status === "match" ||
         domainCheck.status === "affiliated" ||
-        domainCheck.status === "no_email" ||
-        domainCheck.status === "no_company_domain") &&
+        domainCheck.status === "subdomain") &&
       headerAuth.scoreDelta <= 0;
     const ctaUnsafe =
       linkIntegrity.link_integrity_status === "dangerous" ||
