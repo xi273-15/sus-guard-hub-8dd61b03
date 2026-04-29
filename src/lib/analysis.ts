@@ -3792,6 +3792,8 @@ export function analyzeLinkIntegrity(input: {
   message?: string;
   companyDomain?: string;
   senderDomain?: string | null;
+  ctaUrl?: string;
+  ctaText?: string;
 }): LinkIntegrityResult {
   const message = (input.message ?? "").trim();
   const empty: LinkIntegrityResult = {
@@ -3803,9 +3805,18 @@ export function analyzeLinkIntegrity(input: {
     link_suspicious_destinations: [],
     link_redirect_notes: [],
   };
-  if (!message) return empty;
-
-  const raw = extractLinks(message);
+  const explicitCtaUrl = (input.ctaUrl ?? "").trim();
+  const explicitCtaText = (input.ctaText ?? "").trim() || null;
+  const fromMessage = message ? extractLinks(message) : [];
+  // Merge explicit CTA as the FIRST link so it takes priority and dedupes against extracted ones.
+  const raw: Array<{ url: string; visibleText: string | null; explicit?: boolean }> = [];
+  if (explicitCtaUrl) {
+    raw.push({ url: explicitCtaUrl, visibleText: explicitCtaText, explicit: true });
+  }
+  for (const l of fromMessage) {
+    if (explicitCtaUrl && l.url === explicitCtaUrl) continue;
+    raw.push(l);
+  }
   if (!raw.length) return empty;
 
   const companyHost = (input.companyDomain ?? "").toLowerCase().replace(/^https?:\/\//, "").split("/")[0].replace(/^www\./, "");
