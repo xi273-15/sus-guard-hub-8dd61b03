@@ -3694,6 +3694,528 @@ async function synthesizeRecruiterIdentity(args: {
   }
 }
 
+// ============================================================
+// Link / CTA Integrity analysis (heuristic, no network calls)
+// ============================================================
+
+const LINK_SHORTENERS = new Set([
+  "bit.ly", "tinyurl.com", "t.co", "lnkd.in", "is.gd", "ow.ly", "rb.gy",
+  "cutt.ly", "buff.ly", "shorturl.at", "rebrand.ly", "tiny.cc", "s.id",
+  "soo.gd", "shorte.st", "adf.ly", "bit.do", "v.gd", "qr.ae", "0rz.tw",
+  "goo.gl", "tr.im", "yourls.org", "shorturl.com",
+]);
+
+const TRUSTED_INFRA_ROOTS = new Set([
+  "linkedin.com", "greenhouse.io", "lever.co", "workday.com", "ashbyhq.com",
+  "smartrecruiters.com", "myworkdayjobs.com", "icims.com", "jobvite.com",
+  "bamboohr.com", "rippling.com", "calendly.com", "savvycal.com",
+  "notion.site", "notion.so", "docs.google.com", "drive.google.com",
+  "forms.gle", "zoom.us", "teams.microsoft.com", "meet.google.com",
+]);
+
+const REDIRECT_PARAM_KEYS = new Set([
+  "url", "u", "redirect", "redir", "redirect_uri", "redirecturl", "next",
+  "to", "dest", "destination", "target", "goto", "out", "link",
+  "continue", "return", "returnto", "return_url",
+]);
+
+const CTA_TRUSTED_PHRASES = [
+  "review", "view job", "view role", "apply", "apply now", "open role",
+  "verify", "confirm", "sign in", "log in", "login", "secure", "account",
+  "download", "open portal", "click here", "complete profile", "schedule",
+  "interview", "offer", "next steps", "view position", "see role",
+  "update payment", "verify identity", "verify activity", "review activity",
+];
+
+function safeUrl(raw: string): URL | null {
+  try {
+    return new URL(raw);
+  } catch {
+    return null;
+  }
+}
+
+function extractLinks(message: string): Array<{ url: string; visibleText: string | null }> {
+  if (!message) return [];
+  const out: Array<{ url: string; visibleText: string | null }> = [];
+  const seen = new Set<string>();
+  // 1. <a href="...">text</a>
+  const aRe = /<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = aRe.exec(message)) !== null) {
+    const url = m[1].trim();
+    const text = m[2].replace(/<[^>]+>/g, "").trim() || null;
+    const key = `${url}|${text ?? ""}`;
+    if (!seen.has(key)) { seen.add(key); out.push({ url, visibleText: text }); }
+  }
+  // 2. Markdown [text](url)
+  const mdRe = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
+  while ((m = mdRe.exec(message)) !== null) {
+    const text = m[1].trim() || null;
+    const url = m[2].trim();
+    const key = `${url}|${text ?? ""}`;
+    if (!seen.has(key)) { seen.add(key); out.push({ url, visibleText: text }); }
+  }
+  // 3. Bare URLs (http/https + javascript:/data:)
+  const bareRe = /\b((?:https?:\/\/|javascript:|data:)[^\s<>"')]+)/gi;
+  while ((m = bareRe.exec(message)) !== null) {
+    const url = m[1].trim().replace(/[.,;:!?)]+$/, "");
+    const key = `${url}|`;
+    if (!seen.has(key)) {
+      // Skip if already captured via <a> or markdown
+      const already = out.some((l) => l.url === url);
+      if (!already) { seen.add(key); out.push({ url, visibleText: null }); }
+    }
+  }
+  return out;
+}
+
+function hasTrustedActionWording(text: string | null): boolean {
+  if (!text) return false;
+  const t = text.toLowerCase();
+  return CTA_TRUSTED_PHRASES.some((p) => t.includes(p));
+}
+
+function looksPunycode(host: string): boolean {
+  return /(^|\.)xn--/i.test(host);
+}
+
+function isIpHost(host: string): boolean {
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || /^\[[0-9a-f:]+\]$/i.test(host);
+}
+
+export function analyzeLinkIntegrity(input: {
+  message?: string;
+  companyDomain?: string;
+  senderDomain?: string | null;
+}): LinkIntegrityResult {
+  const message = (input.message ?? "").trim();
+  const empty: LinkIntegrityResult = {
+    available: false,
+    link_integrity_status: "unknown",
+    link_findings: [],
+    link_summary: "No links found in the message to evaluate.",
+    link_trusted_domains: [],
+    link_suspicious_destinations: [],
+    link_redirect_notes: [],
+  };
+  if (!message) return empty;
+
+  const raw = extractLinks(message);
+  if (!raw.length) return empty;
+
+  const companyHost = (input.companyDomain ?? "").toLowerCase().replace(/^https?:\/\//, "").split("/")[0].replace(/^www\./, "");
+  const companyRootStr = companyHost ? rootDomain(companyHost) : "";
+  const senderHost = (input.senderDomain ?? "").toLowerCase();
+  const senderRootStr = senderHost ? rootDomain(senderHost) : "";
+
+  const trustedRoots = new Set<string>();
+  if (companyRootStr) trustedRoots.add(companyRootStr);
+  if (senderRootStr) trustedRoots.add(senderRootStr);
+  TRUSTED_INFRA_ROOTS.forEach((r) => trustedRoots.add(r));
+
+  const isTrustedHost = (host: string): boolean => {
+    const root = rootDomain(host);
+    if (trustedRoots.has(root)) return true;
+    if (companyHost && isLikelyAffiliated(host, root, companyHost, companyRootStr)) return true;
+    return false;
+  };
+
+  const findings: LinkFinding[] = [];
+  const trustedDomains = new Set<string>();
+  const suspiciousDestinations = new Set<string>();
+  const redirectNotes: string[] = [];
+
+  for (const { url, visibleText } of raw) {
+    const lowerUrl = url.toLowerCase();
+    // Dangerous schemes
+    if (lowerUrl.startsWith("javascript:") || lowerUrl.startsWith("data:")) {
+      findings.push({
+        visible_text: visibleText,
+        url,
+        host: lowerUrl.split(":")[0],
+        status: "dangerous",
+        note: `Uses a ${lowerUrl.split(":")[0]}: scheme — this is a known phishing/code-execution pattern, not a normal web link.`,
+      });
+      suspiciousDestinations.add(url);
+      continue;
+    }
+    const parsed = safeUrl(url);
+    if (!parsed) continue;
+    const host = parsed.hostname.toLowerCase();
+    const root = rootDomain(host);
+
+    // userinfo (@) in authority is a classic masking trick
+    if (parsed.username || parsed.password) {
+      findings.push({
+        visible_text: visibleText,
+        url, host,
+        status: "masked",
+        note: `URL hides the real destination behind a "user@host" prefix — a known phishing trick.`,
+      });
+      suspiciousDestinations.add(url);
+      continue;
+    }
+    if (isIpHost(host)) {
+      findings.push({ visible_text: visibleText, url, host, status: "dangerous", note: "Link points to a raw IP address instead of a domain — unusual for legitimate recruiters." });
+      suspiciousDestinations.add(url);
+      continue;
+    }
+    if (looksPunycode(host)) {
+      findings.push({ visible_text: visibleText, url, host, status: "dangerous", note: "Link uses a punycode (xn--) host, often used to imitate brand names with non-Latin characters." });
+      suspiciousDestinations.add(url);
+      continue;
+    }
+
+    // Open-redirect parameter check
+    let redirectTo: string | null = null;
+    for (const [k, v] of parsed.searchParams.entries()) {
+      if (REDIRECT_PARAM_KEYS.has(k.toLowerCase()) && /^https?:\/\//i.test(v)) {
+        redirectTo = v;
+        break;
+      }
+    }
+    if (redirectTo) {
+      const inner = safeUrl(redirectTo);
+      const innerHost = inner?.hostname.toLowerCase() ?? "";
+      const innerTrusted = innerHost && isTrustedHost(innerHost);
+      const note = innerTrusted
+        ? `Link redirects through ${host} to ${innerHost} (a recognized destination).`
+        : `Link redirects through ${host} to ${innerHost || "an external site"} — open-redirect parameters are commonly abused for phishing.`;
+      redirectNotes.push(note);
+      findings.push({
+        visible_text: visibleText,
+        url, host,
+        status: innerTrusted ? "redirect" : "redirect",
+        note,
+      });
+      if (!innerTrusted) suspiciousDestinations.add(url);
+      else trustedDomains.add(innerHost);
+      continue;
+    }
+
+    // URL shortener
+    if (LINK_SHORTENERS.has(root) || LINK_SHORTENERS.has(host)) {
+      findings.push({
+        visible_text: visibleText,
+        url, host,
+        status: "shortener",
+        note: `Uses a URL shortener (${host}) — the real destination is hidden until clicked.`,
+      });
+      redirectNotes.push(`${host} hides the true destination.`);
+      suspiciousDestinations.add(url);
+      continue;
+    }
+
+    // Trusted vs off-domain
+    if (isTrustedHost(host)) {
+      findings.push({
+        visible_text: visibleText,
+        url, host,
+        status: "trusted",
+        note: companyRootStr && (root === companyRootStr || isLikelyAffiliated(host, root, companyHost, companyRootStr))
+          ? `Stays within the claimed company domain (${root}).`
+          : `Points to a recognized recruiting/infra service (${root}).`,
+      });
+      trustedDomains.add(host);
+    } else {
+      // Off-domain — escalate if visible text suggests a trusted action
+      const trustedAction = hasTrustedActionWording(visibleText);
+      findings.push({
+        visible_text: visibleText,
+        url, host,
+        status: trustedAction ? "off_domain" : "off_domain",
+        note: trustedAction
+          ? `Button text "${visibleText}" suggests a trusted company action, but the link actually goes to ${host} — a strong phishing pattern.`
+          : companyRootStr
+            ? `Link points to ${host}, which is outside the claimed company's domain (${companyRootStr}).`
+            : `Link points to ${host}.`,
+      });
+      suspiciousDestinations.add(url);
+    }
+  }
+
+  // Determine overall status
+  let status: LinkIntegrityStatus = "clean";
+  let summary = "";
+  const hasDangerous = findings.some((f) => f.status === "dangerous" || f.status === "masked");
+  const trustedActionMismatch = findings.some(
+    (f) => f.status === "off_domain" && hasTrustedActionWording(f.visible_text),
+  );
+  const hasOffDomain = findings.some((f) => f.status === "off_domain");
+  const hasShortener = findings.some((f) => f.status === "shortener");
+  const hasUntrustedRedirect = findings.some(
+    (f) => f.status === "redirect" && suspiciousDestinations.has(f.url),
+  );
+
+  if (hasDangerous || trustedActionMismatch) {
+    status = "dangerous";
+    summary = trustedActionMismatch
+      ? "A button looks like a normal company action but actually points somewhere else — a classic phishing pattern."
+      : "One or more links use dangerous patterns (raw IP, javascript/data URL, punycode, or hidden user prefix).";
+  } else if (hasOffDomain || hasUntrustedRedirect) {
+    status = "suspicious";
+    summary = "Some links point outside the claimed company's domain. Verify the destination before clicking.";
+  } else if (hasShortener) {
+    status = "minor";
+    summary = "A URL shortener is used, which hides the true destination. Hover or expand it before clicking.";
+  } else {
+    status = "clean";
+    summary = findings.length
+      ? "All links stay within the claimed company or recognized recruiting services."
+      : "No links found in the message to evaluate.";
+  }
+
+  return {
+    available: true,
+    link_integrity_status: status,
+    link_findings: findings,
+    link_summary: summary,
+    link_trusted_domains: Array.from(trustedDomains).slice(0, 10),
+    link_suspicious_destinations: Array.from(suspiciousDestinations).slice(0, 10),
+    link_redirect_notes: redirectNotes.slice(0, 5),
+  };
+}
+
+function linkIntegritySignals(li: LinkIntegrityResult): {
+  scoreDelta: number;
+  floor: number;
+  whyPoints: WhyPoint[];
+  nextSteps: string[];
+  findings: string[];
+} {
+  const whyPoints: WhyPoint[] = [];
+  const nextSteps: string[] = [];
+  const findings: string[] = [];
+  let scoreDelta = 0;
+  let floor = 0;
+  if (!li.available) return { scoreDelta, floor, whyPoints, nextSteps, findings };
+
+  switch (li.link_integrity_status) {
+    case "dangerous": {
+      scoreDelta += 25;
+      floor = Math.max(floor, 70);
+      const trustedAction = li.link_findings.find(
+        (f) => f.status === "off_domain" && hasTrustedActionWording(f.visible_text),
+      );
+      if (trustedAction) {
+        scoreDelta += 5;
+        whyPoints.push({
+          finding: `Link button "${trustedAction.visible_text}" goes to ${trustedAction.host} instead of the claimed company`,
+          why: "Visible action text that mimics a trusted company action but points to an outside domain is a classic phishing pattern. Authentication on the sender side does not protect against an unsafe destination.",
+          severity: "bad",
+        });
+      } else {
+        whyPoints.push({
+          finding: "Message contains a dangerous link pattern",
+          why: "Raw IP addresses, javascript:/data: URLs, punycode hosts, or hidden user@ prefixes are commonly used to disguise phishing destinations.",
+          severity: "bad",
+        });
+      }
+      nextSteps.push("Do not click the action button or any link in this message — open the company website directly in a new tab instead.");
+      findings.push(`Link / CTA integrity: ${li.link_summary}`);
+      break;
+    }
+    case "suspicious": {
+      scoreDelta += 12;
+      floor = Math.max(floor, 50);
+      whyPoints.push({
+        finding: "Some links point outside the claimed company's domain",
+        why: "A real sender can still embed unsafe destinations. Verify where each link actually points before clicking.",
+        severity: "caution",
+      });
+      nextSteps.push("Hover over each link (or long-press on mobile) to check the real destination before clicking.");
+      findings.push(`Link / CTA integrity: ${li.link_summary}`);
+      break;
+    }
+    case "minor": {
+      scoreDelta += 6;
+      whyPoints.push({
+        finding: "Message uses a URL shortener",
+        why: "Shorteners hide the real destination. They have legitimate uses but are also commonly used in phishing.",
+        severity: "caution",
+      });
+      nextSteps.push("Expand any shortened links (e.g. paste into unshorten.it) before clicking.");
+      break;
+    }
+    case "clean": {
+      if (li.link_findings.length > 0) {
+        scoreDelta -= 4;
+        whyPoints.push({
+          finding: "All links stay within trusted destinations",
+          why: "Every link in the message points to the claimed company domain or a recognized recruiting platform.",
+          severity: "good",
+        });
+      }
+      break;
+    }
+    default:
+      break;
+  }
+  return { scoreDelta, floor, whyPoints, nextSteps, findings };
+}
+
+// ============================================================
+// Central synthesis layer (LLM with deterministic fallback)
+// ============================================================
+
+type SynthesisInput = {
+  level: RiskLevel;
+  score: number;
+  context: {
+    recruiterName?: string;
+    companyName?: string;
+    companyDomain?: string;
+    hasMessage: boolean;
+    hasHeaders: boolean;
+  };
+  signals: {
+    domainStatus: string;
+    domainFinding?: string;
+    headerSummary: string[];
+    scamFindings: string[];
+    cautionFindings: string[];
+    positiveFindings: string[];
+    osintDirectScam?: string;
+    paymentRequested: boolean;
+  };
+  modules: {
+    rdap: { age: string; summary: string };
+    dns: { health: string; summary: string };
+    safeBrowsing: { status: string; summary: string };
+    ct: { history: string; summary: string };
+    wayback: { status: string; summary: string };
+    recruiterLocation: { mismatch: boolean; summary: string };
+    websiteTraffic: { mismatch: boolean; summary: string };
+    linkIntegrity: { status: LinkIntegrityStatus; summary: string };
+    osintFindings: string[];
+  };
+  fallback: {
+    summary: string;
+    why_it_matters: string;
+    next_steps: string[];
+  };
+};
+
+type SynthesisOutput = {
+  summary: string;
+  why_it_matters: string;
+  next_steps: string[];
+};
+
+function clampSentences(text: string, maxSentences: number, maxWords: number): string {
+  if (!text) return text;
+  const sentences = text.match(/[^.!?]+[.!?]+(\s|$)/g) ?? [text];
+  let joined = sentences.slice(0, maxSentences).join("").trim();
+  const words = joined.split(/\s+/);
+  if (words.length > maxWords) joined = words.slice(0, maxWords).join(" ") + "…";
+  return joined;
+}
+
+function applyCoherenceGuard(
+  out: SynthesisOutput,
+  level: RiskLevel,
+  linkStatus: LinkIntegrityStatus,
+): SynthesisOutput {
+  let summary = clampSentences(out.summary || "", 6, 300);
+  if ((level === "High" || level === "Likely Scam") && !/^⚠️/.test(summary)) {
+    summary = `⚠️ ${summary}`;
+  }
+  // If the link layer is dangerous/suspicious but summary doesn't mention links, prepend a brief plain-English note.
+  if ((linkStatus === "dangerous" || linkStatus === "suspicious") && !/link|button|click|destination/i.test(summary)) {
+    const note =
+      linkStatus === "dangerous"
+        ? "A button or link in this message looks normal but actually points somewhere unsafe."
+        : "Some links in this message point outside the claimed company's domain.";
+    summary = `${summary} ${note}`.trim();
+  }
+  const next_steps = (out.next_steps ?? []).map((s) => s.trim()).filter(Boolean).slice(0, 5);
+  const why_it_matters = clampSentences(out.why_it_matters || "", 6, 220);
+  return { summary, why_it_matters, next_steps };
+}
+
+async function synthesizeNarrative(input: SynthesisInput): Promise<SynthesisOutput> {
+  const apiKey = process.env.LOVABLE_API_KEY;
+  const fallback = applyCoherenceGuard(
+    {
+      summary: input.fallback.summary,
+      why_it_matters: input.fallback.why_it_matters,
+      next_steps: input.fallback.next_steps,
+    },
+    input.level,
+    input.modules.linkIntegrity.status,
+  );
+  if (!apiKey) return fallback;
+
+  const system = `You are the final synthesis layer for a recruiter-scam analysis tool. You receive structured signals from many independent modules and must produce ONE coherent narrative for a non-technical user.
+
+HARD RULES:
+- "summary": ≤4 short sentences, ≤120 words. Lead with the BIGGEST danger, or with calm reassurance if low risk. Plain English. No subsystem names (DNS, SPF, DKIM, DMARC, RDAP, CT, Wayback) unless one is THE single decisive signal.
+- "why_it_matters": 2–4 short sentences explaining the reasoning behind the risk level. May reference 1–2 specific signals in plain language.
+- "next_steps": 3–5 short imperative bullets, action-first. No "consider" / "you may want to". No duplicates.
+- NEVER contradict the risk level. NEVER say "low risk" if level is High or Likely Scam.
+- If link_integrity status is "dangerous" or "suspicious", explicitly mention the link/button danger in plain language in summary AND next_steps. A clean sender does NOT excuse an unsafe link.
+- If payment/check/equipment/crypto language is present, the summary MUST start with a one-line ⚠️ warning about not sending money.
+- Avoid jargon. Avoid repeating the same sentence in summary and why_it_matters.`;
+
+  const user = JSON.stringify({
+    risk_level: input.level,
+    risk_score: input.score,
+    context: input.context,
+    signals: input.signals,
+    modules: input.modules,
+  });
+
+  try {
+    const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash-lite",
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "emit_narrative",
+              description: "Emit the final coherent narrative.",
+              parameters: {
+                type: "object",
+                properties: {
+                  summary: { type: "string" },
+                  why_it_matters: { type: "string" },
+                  next_steps: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 6 },
+                },
+                required: ["summary", "why_it_matters", "next_steps"],
+                additionalProperties: false,
+              },
+            },
+          },
+        ],
+        tool_choice: { type: "function", function: { name: "emit_narrative" } },
+      }),
+    });
+    if (!resp.ok) {
+      console.warn("synthesizeNarrative gateway error:", resp.status);
+      return fallback;
+    }
+    const data = await resp.json();
+    const args = data?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
+    if (!args) return fallback;
+    const parsed = typeof args === "string" ? JSON.parse(args) : args;
+    if (!parsed?.summary || !parsed?.why_it_matters || !Array.isArray(parsed?.next_steps)) {
+      return fallback;
+    }
+    return applyCoherenceGuard(parsed as SynthesisOutput, input.level, input.modules.linkIntegrity.status);
+  } catch (err) {
+    console.warn("synthesizeNarrative failed:", err);
+    return fallback;
+  }
+}
+
 export const analyzeRecruiter = createServerFn({ method: "POST" })
   .inputValidator((input: AnalysisInput) => input)
   .handler(async ({ data }): Promise<AnalysisResult> => {
