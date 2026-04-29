@@ -51,6 +51,7 @@ import type {
   WaybackResult,
   RecruiterIdentityResult,
   RecruiterPublicProfile,
+  LinkIntegrityResult,
 } from "@/lib/analysis";
 import { analyzeRecruiter, type AnalysisResult } from "@/lib/analysis";
 import { FloatingAudioAssistant } from "@/components/floating-audio-assistant";
