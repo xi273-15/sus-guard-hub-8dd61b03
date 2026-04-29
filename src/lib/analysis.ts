@@ -189,6 +189,37 @@ export type RecruiterIdentityResult = {
   recruiter_identity_notes: string[];
 };
 
+// ---------- Link / CTA integrity ----------
+
+export type LinkIntegrityStatus = "clean" | "minor" | "suspicious" | "dangerous" | "unknown";
+
+export type LinkFindingStatus =
+  | "trusted"
+  | "neutral"
+  | "off_domain"
+  | "shortener"
+  | "redirect"
+  | "masked"
+  | "dangerous";
+
+export type LinkFinding = {
+  visible_text: string | null;
+  url: string;
+  host: string;
+  status: LinkFindingStatus;
+  note: string;
+};
+
+export type LinkIntegrityResult = {
+  available: boolean;
+  link_integrity_status: LinkIntegrityStatus;
+  link_findings: LinkFinding[];
+  link_summary: string;
+  link_trusted_domains: string[];
+  link_suspicious_destinations: string[];
+  link_redirect_notes: string[];
+};
+
 export type AnalysisResult = {
   risk_score: number;
   risk_level: RiskLevel;
@@ -208,6 +239,7 @@ export type AnalysisResult = {
   recruiter_location: RecruiterLocationResult;
   website_traffic: WebsiteTrafficResult;
   recruiter_identity: RecruiterIdentityResult;
+  link_integrity: LinkIntegrityResult;
 };
 
 type SignalKind = "scam" | "caution" | "positive";
