@@ -4689,6 +4689,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         message: "",
         companyDomain: data.companyDomain,
         senderDomain: domainCheck.senderDomain,
+        ctaUrl: data.ctaUrl,
+        ctaText: data.ctaText,
       });
 
       return {
@@ -4765,6 +4767,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       message,
       companyDomain: data.companyDomain,
       senderDomain: domainCheck.senderDomain,
+      ctaUrl: data.ctaUrl,
+      ctaText: data.ctaText,
     });
     const linkSignals = linkIntegritySignals(linkIntegrity);
     score += linkSignals.scoreDelta;
