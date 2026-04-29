@@ -614,6 +614,11 @@ function ResultsView({
         <FindingSection title="Sender domain registration">
           <RdapCardBody rdap={result.rdap} />
         </FindingSection>
+        {result.link_integrity?.available && (
+          <FindingSection title="Link / CTA integrity">
+            <LinkIntegrityCardBody li={result.link_integrity} />
+          </FindingSection>
+        )}
       </CategoryModal>
 
       <CategoryModal
