@@ -5160,6 +5160,31 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     // Recompute final level after link signals + floors may have shifted score.
     const finalLevel = levelFor(score);
 
+    // ---- Detect "legitimate sender + unsafe CTA" platform-abuse case ----
+    // Sender/auth look clean (no domain mismatch, headers pass or are absent), but the link/CTA layer is suspicious or worse.
+    const senderClean =
+      (domainCheck.status === "match" ||
+        domainCheck.status === "affiliated" ||
+        domainCheck.status === "no_email" ||
+        domainCheck.status === "no_company_domain") &&
+      headerAuth.scoreDelta <= 0;
+    const ctaUnsafe =
+      linkIntegrity.link_integrity_status === "dangerous" ||
+      linkIntegrity.link_integrity_status === "suspicious";
+    const legitimateSenderUnsafeCta = senderClean && ctaUnsafe;
+    const ctaProvided = !!(data.ctaUrl && data.ctaUrl.trim());
+
+    // Priority rule: when this is a platform-abuse phishing case, the CTA mismatch
+    // is the real story — push the summary to lead with it and don't let generic
+    // brand-impersonation OSINT mentions dominate.
+    let summaryForFallback = summaryParts.join(" ");
+    if (legitimateSenderUnsafeCta) {
+      summaryForFallback = [
+        "The sender appears authentic, but the action link does not align with the trusted brand destination.",
+        "This may be a platform-abuse phishing scenario: legitimate infrastructure, unsafe action path.",
+      ].join(" ");
+    }
+
     // ---- Central synthesis layer (LLM with deterministic fallback) ----
     const synth = await synthesizeNarrative({
       level: finalLevel,
@@ -5178,10 +5203,16 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         scamFindings: matchedScam.map((m) => m.finding),
         cautionFindings: matchedCaution.map((m) => m.finding),
         positiveFindings: matchedPositive.map((m) => m.finding),
-        osintDirectScam: osint.result.findings.find((f) => /directly describe/i.test(f)),
+        // Suppress generic "brand is a scam" OSINT framing in the platform-abuse case
+        // — the brand is being IMPERSONATED, not committing fraud here.
+        osintDirectScam: legitimateSenderUnsafeCta
+          ? undefined
+          : osint.result.findings.find((f) => /directly describe/i.test(f)),
         paymentRequested: matchedScam.some(
           (s) => s.id === "payment" || s.id === "check_equipment" || s.id === "gift_crypto" || s.id === "sensitive_docs",
         ),
+        legitimateSenderUnsafeCta,
+        ctaProvided,
       },
       modules: {
         rdap: { age: rdap.ageBucket, summary: rdap.ageSummary },
@@ -5195,7 +5226,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         osintFindings: osint.result.findings.slice(0, 6),
       },
       fallback: {
-        summary: summaryParts.join(" "),
+        summary: summaryForFallback,
         why_it_matters,
         next_steps,
       },
