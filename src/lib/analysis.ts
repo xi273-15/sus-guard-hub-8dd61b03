@@ -3841,7 +3841,7 @@ export function analyzeLinkIntegrity(input: {
   const suspiciousDestinations = new Set<string>();
   const redirectNotes: string[] = [];
 
-  for (const { url, visibleText } of raw) {
+  for (const { url, visibleText, explicit } of raw) {
     const lowerUrl = url.toLowerCase();
     // Dangerous schemes
     if (lowerUrl.startsWith("javascript:") || lowerUrl.startsWith("data:")) {
@@ -3935,16 +3935,18 @@ export function analyzeLinkIntegrity(input: {
       trustedDomains.add(host);
     } else {
       // Off-domain — escalate if visible text suggests a trusted action
-      const trustedAction = hasTrustedActionWording(visibleText);
+      const trustedAction = hasTrustedActionWording(visibleText) || !!explicit;
       findings.push({
         visible_text: visibleText,
         url, host,
         status: trustedAction ? "off_domain" : "off_domain",
-        note: trustedAction
-          ? `Button text "${visibleText}" suggests a trusted company action, but the link actually goes to ${host} — a strong phishing pattern.`
-          : companyRootStr
-            ? `Link points to ${host}, which is outside the claimed company's domain (${companyRootStr}).`
-            : `Link points to ${host}.`,
+        note: explicit
+          ? `The action button${visibleText ? ` ("${visibleText}")` : ""} actually points to ${host}${companyRootStr ? `, outside the claimed company domain (${companyRootStr})` : ""} — a classic platform-abuse phishing pattern.`
+          : trustedAction
+            ? `Button text "${visibleText}" suggests a trusted company action, but the link actually goes to ${host} — a strong phishing pattern.`
+            : companyRootStr
+              ? `Link points to ${host}, which is outside the claimed company's domain (${companyRootStr}).`
+              : `Link points to ${host}.`,
       });
       suspiciousDestinations.add(url);
     }
