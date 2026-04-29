@@ -234,10 +234,31 @@ export function waybackVerdict(s: AnalysisResult["wayback"]["archive_history_sta
   }
 }
 
+export function linkIntegrityVerdict(
+  s: AnalysisResult["link_integrity"]["link_integrity_status"],
+): CategoryVerdict {
+  switch (s) {
+    case "clean":
+      return "good";
+    case "minor":
+      return "caution";
+    case "suspicious":
+      return "caution";
+    case "dangerous":
+      return "bad";
+    default:
+      return "unknown";
+  }
+}
+
 // --- Aggregate stats per category card ---
 
 export function emailStats(result: AnalysisResult): CategoryStats {
-  return rollUp([dnsVerdict(result.dns.health), rdapVerdict(result.rdap.ageBucket)]);
+  const verdicts = [dnsVerdict(result.dns.health), rdapVerdict(result.rdap.ageBucket)];
+  if (result.link_integrity?.available) {
+    verdicts.push(linkIntegrityVerdict(result.link_integrity.link_integrity_status));
+  }
+  return rollUp(verdicts);
 }
 
 export function companyStats(
@@ -274,6 +295,9 @@ export function emailVoiceText(result: AnalysisResult): string {
   parts.push(result.dns.interpretation);
   parts.push(result.rdap.ageSummary);
   parts.push(result.rdap.interpretation);
+  if (result.link_integrity?.available) {
+    parts.push(`Link and CTA integrity: ${result.link_integrity.link_summary}`);
+  }
   return parts.filter(Boolean).join(" ");
 }
 
