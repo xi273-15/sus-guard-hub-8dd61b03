@@ -1,42 +1,127 @@
+# Phishing Defense + Synthesis Architecture
 
-The user wants plain hyperlinks. The current `ExternalLink` component already uses a native `<a target="_blank" rel="noopener noreferrer">` — clicks DO open the real URL directly. The `ERR_BLOCKED_BY_RESPONSE` they see is LinkedIn/Glassdoor refusing the request from a fresh tab with no session cookies (anti-bot), not anything our app does.
+Two coordinated changes in `src/lib/analysis.ts` (logic) and small touches in `src/routes/index.tsx` + `src/lib/categorize-findings.ts` (UI grouping). Scoring rules from previous turns are preserved.
 
-But the user's complaint is valid UX: the copy button is a workaround, not a fix. We should make the primary click "just work" as much as possible, and stop surfacing copy as the main affordance.
+---
 
-## Root cause of the block
-LinkedIn's `/in/<slug>` and search URLs return `x-frame-options` and aggressive bot checks that sometimes 999/blocked-by-response even on direct top-level navigation when the Referer is a Lovable preview domain. Same for Glassdoor.
+## 1. New module: Link / CTA Integrity
 
-## Fix strategy
+Pure function `analyzeLinkIntegrity({ message, headers, companyDomain, trustedRoots })` that runs alongside the other modules (no network calls — heuristic only, fast and reliable).
 
-1. **Strip the Referer** on outbound clicks so target sites see a clean request (no lovable.app referrer that triggers their anti-scraping). Change `rel="noopener noreferrer"` → `rel="noopener noreferrer"` already strips referer ✓ — but we also need `referrerPolicy="no-referrer"` on the anchor explicitly (belt and suspenders, some browsers honor only the attribute).
+### What it inspects
+- All URLs extracted from the message body and from any HTML-style `<a href="...">` patterns, plus markdown `[text](url)` pairs.
+- Visible CTA text paired with each href (button-like phrases: "Review", "View Job", "Apply", "Verify", "Confirm", "Sign in", "Download", "Open Portal", etc.).
+- Static redirect/masking clues:
+  - URL shorteners (`bit.ly`, `tinyurl`, `t.co`, `lnkd.in`, `is.gd`, `ow.ly`, `rb.gy`, `cutt.ly`, etc.)
+  - Open-redirect patterns (`?url=`, `?redirect=`, `?next=`, `?to=`, Google/Facebook/LinkedIn redirect endpoints)
+  - `@` in authority, hex/punycode hosts, `data:` / `javascript:` schemes
+  - IP-literal hosts, deeply nested subdomains mimicking the brand
+- Whether each destination root domain is in the **trusted set**: companyDomain root + its known affiliated roots (reuse `isLikelyAffiliated` from previous turn) + a small allowlist of obvious infrastructure (e.g. `linkedin.com`, `greenhouse.io`, `lever.co`, `workday.com`, `ashbyhq.com`, `notion.site`, `docs.google.com`, `calendly.com`).
 
-2. **Normalize known-blocky URLs** to their canonical public form:
-   - LinkedIn search URLs (`/search/results/...`) → rewrite to a Google search fallback `https://www.google.com/search?q=site:linkedin.com/in+"<name>"+"<company>"` which always works.
-   - Bare `linkedin.com/in/<slug>` → keep as-is (these usually work on direct click; the search URLs are what 999s).
-   - Glassdoor search → rewrite to Google `site:glassdoor.com "<company>"`.
+### Output shape (added to `AnalysisResult`)
+```ts
+export type LinkIntegrityStatus = "clean" | "minor" | "suspicious" | "dangerous" | "unknown";
 
-3. **Remove the copy button** from the primary UI. Make the anchor the only affordance. Move copy into a tiny right-click-style hover-only icon, or drop it entirely.
+export type LinkFinding = {
+  visible_text: string | null;
+  url: string;
+  host: string;
+  status: "trusted" | "neutral" | "off_domain" | "shortener" | "redirect" | "masked" | "dangerous";
+  note: string; // short human-readable reason
+};
 
-4. **Keep recruiter-location detection untouched** — it's backend-only, already decoupled.
+export type LinkIntegrityResult = {
+  available: boolean;            // true when message contained at least one URL
+  link_integrity_status: LinkIntegrityStatus;
+  link_findings: LinkFinding[];
+  link_summary: string;          // one-line plain English
+  link_trusted_domains: string[];
+  link_suspicious_destinations: string[];
+  link_redirect_notes: string[];
+};
+```
 
-## Changes
+Add `link_integrity: LinkIntegrityResult` to `AnalysisResult`.
 
-**`src/components/external-link.tsx`**
-- Remove copy button from default render (or hide behind hover).
-- Add `referrerPolicy="no-referrer"` to the `<a>`.
-- Add a `normalizeUrl(href)` helper:
-  - If host is `linkedin.com` and path starts with `/search/`, return `https://www.google.com/search?q=` + encoded `site:linkedin.com/in "<query extracted from URL params>"`.
-  - If host is `glassdoor.com` and it's a search/listing URL, return Google site-search equivalent.
-  - Else return original href.
-- Anchor uses the normalized URL; show original domain as a small muted hint so user knows where it goes.
+### Scoring deltas (added to existing signal pipeline)
+- Trusted CTA text + off-domain destination → `bad` signal, weight ~22, contributes to score floor 60.
+- Off-domain destination (no trusted-action wording) → `caution`, weight ~12.
+- Shortener / open-redirect / masked URL → `caution`, weight ~10 (stacks once, not per link).
+- `data:` / `javascript:` / IP host / punycode / userinfo `@` → `bad`, weight ~25, floor 70.
+- All links resolve to trusted set → small `positive`, weight ~4.
 
-**No other files change.** `src/routes/index.tsx` already uses `ExtLink`.
+These are additive on top of the existing SPF/DKIM/DMARC/identity logic. The key invariant from the user's spec: **clean auth does NOT cancel a dangerous CTA destination** — link signals are evaluated independently and never suppressed by a positive sender-domain match.
 
-## Why this works
-- Direct profile links (linkedin.com/in/john-doe) open fine in a new tab — those were never the issue.
-- Search-result links (the ones that 999) get auto-redirected through Google, which always loads and shows the real LinkedIn link as the first result. One extra click but zero error pages.
-- No referer leak.
-- No copy/paste UX.
+---
 
-## Out of scope
-Server-side proxy (would re-introduce the "internal viewer" pattern the user explicitly rejected).
+## 2. Central AI Synthesis Layer
+
+New helper `synthesizeNarrative(signals)` invoked once after all modules complete (only in the "have message / have headers" branch and in the no-message branch, both call sites). Replaces the current ad-hoc concatenation of `summaryParts`, `why_it_matters`, and `next_steps`.
+
+### Inputs
+A compact structured object built from already-collected results:
+```
+{
+  level, score, domainCheck, headerAuth,
+  signals: { scam[], caution[], positive[] },
+  modules: { rdap, dns, safe_browsing, ct, wayback,
+             recruiter_location, website_traffic,
+             osint, recruiter_identity, link_integrity },
+  context: { companyName, companyDomain, recruiterName, hasMessage, hasHeaders }
+}
+```
+
+### Pipeline
+1. **Deterministic classifier** (always runs): bins each finding into `email_findings` / `company_findings` / `recruiter_findings` per the user's grouping rules in §4 of the request. This is the source of truth for section grouping — the LLM only writes prose, never decides grouping.
+2. **LLM call** via Lovable AI Gateway (`google/gemini-3-flash-preview`, low effort, JSON tool-call schema) producing:
+   ```
+   {
+     summary: string,         // ≤ 4 sentences, leads with biggest danger or "low risk overall"
+     why_it_matters: string,  // 2–4 sentences, no system dump
+     next_steps: string[]     // 3–5 short imperative bullets
+   }
+   ```
+   System prompt enforces: no jargon (SPF/DKIM only when essential), no contradiction with risk_level, must mention link/CTA red flag in plain language if `link_integrity_status` is `suspicious` or `dangerous`.
+3. **Fallback**: if the LLM call fails / returns invalid JSON / no `LOVABLE_API_KEY`, fall back to the current deterministic builders (`buildAudioSummary`, `buildWhyItMatters`, existing `next_steps` set). Synthesis is an enhancement layer, not a hard dependency.
+4. **Coherence guard**: post-processing trims summary > 6 sentences, drops bullets that duplicate findings already in `why_points`, and prepends a `⚠️` line for `High` / `Likely Scam` results.
+
+### Where it runs
+- `analyzeServer` in `src/lib/analysis.ts`, replacing both:
+  - the no-message branch result construction (~line 4111)
+  - the full-analysis result construction (~line 4548)
+
+Existing `why_points` array stays as-is (it's the structured "Why it matters" detail list rendered in the UI). The synthesis layer overwrites `why_it_matters` (paragraph form), `audio_summary`, and `next_steps` only.
+
+---
+
+## 3. Section grouping (UI)
+
+In `src/lib/categorize-findings.ts`:
+- Extend `emailStats` to include link-integrity verdict.
+- Add a `linkIntegrityVerdict()` helper.
+- Update `emailVoiceText` to read from `link_integrity` when present.
+
+In `src/routes/index.tsx`:
+- Inside the existing **Email findings** modal, add a "Link / CTA Integrity" subsection rendering `link_integrity.link_summary`, the trusted vs. suspicious destinations, and per-link findings (visible text → host with status badge). No new top-level section.
+
+Recruiter and Company sections are already correctly grouped from previous turns; only verify `recruiter_identity` and `recruiter_location` stay in Recruiter, and `website_traffic` / `safe_browsing` / `ct` / `wayback` / `rdap` / `dns` stay in Company.
+
+---
+
+## 4. Summary style enforcement
+
+Hard rules baked into both the LLM system prompt and the post-processing guard:
+- ≤ 6 short sentences, ≤ 300 words.
+- Lead with biggest danger (or "low risk overall, here's why").
+- Never enumerate subsystem names (DNS, RDAP, CT, Wayback, SPF/DKIM/DMARC) unless one of them is THE single decisive signal.
+- Must explicitly call out CTA/link danger in plain language when `link_integrity_status ∈ {suspicious, dangerous}`.
+- Must not contradict `risk_level`.
+
+---
+
+## Files touched
+- `src/lib/analysis.ts` — add `LinkIntegrityResult` types, `analyzeLinkIntegrity()`, `synthesizeNarrative()`, wire into both result-construction paths, add link-integrity signals to scoring.
+- `src/lib/categorize-findings.ts` — add `linkIntegrityVerdict`, fold into `emailStats` and `emailVoiceText`.
+- `src/routes/index.tsx` — render Link / CTA Integrity inside the existing Email findings modal.
+
+No new dependencies. No schema/db changes. Lovable AI Gateway is already wired (used by `runRecruiterIdentity` synthesis from the previous turn) so no new secret needed.
