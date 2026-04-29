@@ -371,6 +371,39 @@ function Index() {
                       />
                     </Field>
 
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field
+                        id="ctaText"
+                        label="Button text (optional)"
+                        icon={<FileText className="h-3.5 w-3.5" />}
+                        hint="What does the main button say? e.g. 'Verify account', 'View role', 'Confirm now'."
+                        speakText="The visible text on the main button or call-to-action in the email."
+                        speakKey="field:ctaText"
+                      >
+                        <Input
+                          id="ctaText"
+                          placeholder="e.g. Verify account"
+                          value={form.ctaText}
+                          onChange={update("ctaText")}
+                        />
+                      </Field>
+                      <Field
+                        id="ctaUrl"
+                        label="Where the button actually goes (optional)"
+                        icon={<Globe className="h-3.5 w-3.5" />}
+                        hint="Right-click the button (or long-press on mobile) → Copy link address → paste it here. We'll check if it really matches the company."
+                        speakText="The real destination link behind the button. To get it, right-click the button in the email and choose Copy link address, then paste it here."
+                        speakKey="field:ctaUrl"
+                      >
+                        <Input
+                          id="ctaUrl"
+                          placeholder="https://..."
+                          value={form.ctaUrl}
+                          onChange={update("ctaUrl")}
+                        />
+                      </Field>
+                    </div>
+
                   </FormSection>
 
                   {error && (
