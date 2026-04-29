@@ -9,6 +9,10 @@ export type AnalysisInput = {
   headers?: string;
   /** Optional claimed job/role location, e.g. "Berlin", "Remote-EU", "San Francisco". */
   roleLocation?: string;
+  /** Optional: the actual destination URL of the email's main button/CTA (right-click → Copy link address). */
+  ctaUrl?: string;
+  /** Optional: the visible text on the button/CTA (e.g. "Verify account", "View role"). */
+  ctaText?: string;
 };
 
 export type RiskLevel = "Low" | "Caution" | "High" | "Likely Scam";
@@ -3788,6 +3792,8 @@ export function analyzeLinkIntegrity(input: {
   message?: string;
   companyDomain?: string;
   senderDomain?: string | null;
+  ctaUrl?: string;
+  ctaText?: string;
 }): LinkIntegrityResult {
   const message = (input.message ?? "").trim();
   const empty: LinkIntegrityResult = {
@@ -3799,9 +3805,18 @@ export function analyzeLinkIntegrity(input: {
     link_suspicious_destinations: [],
     link_redirect_notes: [],
   };
-  if (!message) return empty;
-
-  const raw = extractLinks(message);
+  const explicitCtaUrl = (input.ctaUrl ?? "").trim();
+  const explicitCtaText = (input.ctaText ?? "").trim() || null;
+  const fromMessage = message ? extractLinks(message) : [];
+  // Merge explicit CTA as the FIRST link so it takes priority and dedupes against extracted ones.
+  const raw: Array<{ url: string; visibleText: string | null; explicit?: boolean }> = [];
+  if (explicitCtaUrl) {
+    raw.push({ url: explicitCtaUrl, visibleText: explicitCtaText, explicit: true });
+  }
+  for (const l of fromMessage) {
+    if (explicitCtaUrl && l.url === explicitCtaUrl) continue;
+    raw.push(l);
+  }
   if (!raw.length) return empty;
 
   const companyHost = (input.companyDomain ?? "").toLowerCase().replace(/^https?:\/\//, "").split("/")[0].replace(/^www\./, "");
@@ -3826,7 +3841,7 @@ export function analyzeLinkIntegrity(input: {
   const suspiciousDestinations = new Set<string>();
   const redirectNotes: string[] = [];
 
-  for (const { url, visibleText } of raw) {
+  for (const { url, visibleText, explicit } of raw) {
     const lowerUrl = url.toLowerCase();
     // Dangerous schemes
     if (lowerUrl.startsWith("javascript:") || lowerUrl.startsWith("data:")) {
@@ -3920,16 +3935,18 @@ export function analyzeLinkIntegrity(input: {
       trustedDomains.add(host);
     } else {
       // Off-domain — escalate if visible text suggests a trusted action
-      const trustedAction = hasTrustedActionWording(visibleText);
+      const trustedAction = hasTrustedActionWording(visibleText) || !!explicit;
       findings.push({
         visible_text: visibleText,
         url, host,
         status: trustedAction ? "off_domain" : "off_domain",
-        note: trustedAction
-          ? `Button text "${visibleText}" suggests a trusted company action, but the link actually goes to ${host} — a strong phishing pattern.`
-          : companyRootStr
-            ? `Link points to ${host}, which is outside the claimed company's domain (${companyRootStr}).`
-            : `Link points to ${host}.`,
+        note: explicit
+          ? `The action button${visibleText ? ` ("${visibleText}")` : ""} actually points to ${host}${companyRootStr ? `, outside the claimed company domain (${companyRootStr})` : ""} — a classic platform-abuse phishing pattern.`
+          : trustedAction
+            ? `Button text "${visibleText}" suggests a trusted company action, but the link actually goes to ${host} — a strong phishing pattern.`
+            : companyRootStr
+              ? `Link points to ${host}, which is outside the claimed company's domain (${companyRootStr}).`
+              : `Link points to ${host}.`,
       });
       suspiciousDestinations.add(url);
     }
@@ -3940,7 +3957,12 @@ export function analyzeLinkIntegrity(input: {
   let summary = "";
   const hasDangerous = findings.some((f) => f.status === "dangerous" || f.status === "masked");
   const trustedActionMismatch = findings.some(
-    (f) => f.status === "off_domain" && hasTrustedActionWording(f.visible_text),
+    (f) =>
+      f.status === "off_domain" &&
+      (hasTrustedActionWording(f.visible_text) || /platform-abuse phishing pattern/.test(f.note)),
+  );
+  const explicitCtaMismatch = findings.some(
+    (f) => f.status === "off_domain" && /platform-abuse phishing pattern/.test(f.note),
   );
   const hasOffDomain = findings.some((f) => f.status === "off_domain");
   const hasShortener = findings.some((f) => f.status === "shortener");
@@ -3950,9 +3972,11 @@ export function analyzeLinkIntegrity(input: {
 
   if (hasDangerous || trustedActionMismatch) {
     status = "dangerous";
-    summary = trustedActionMismatch
-      ? "A button looks like a normal company action but actually points somewhere else — a classic phishing pattern."
-      : "One or more links use dangerous patterns (raw IP, javascript/data URL, punycode, or hidden user prefix).";
+    summary = explicitCtaMismatch
+      ? "The action button you flagged points outside the claimed company's domain — the sender may be legitimate, but the destination is not."
+      : trustedActionMismatch
+        ? "A button looks like a normal company action but actually points somewhere else — a classic phishing pattern."
+        : "One or more links use dangerous patterns (raw IP, javascript/data URL, punycode, or hidden user prefix).";
   } else if (hasOffDomain || hasUntrustedRedirect) {
     status = "suspicious";
     summary = "Some links point outside the claimed company's domain. Verify the destination before clicking.";
@@ -4078,6 +4102,8 @@ type SynthesisInput = {
     positiveFindings: string[];
     osintDirectScam?: string;
     paymentRequested: boolean;
+    legitimateSenderUnsafeCta?: boolean;
+    ctaProvided?: boolean;
   };
   modules: {
     rdap: { age: string; summary: string };
@@ -4156,7 +4182,10 @@ HARD RULES:
 - NEVER contradict the risk level. NEVER say "low risk" if level is High or Likely Scam.
 - If link_integrity status is "dangerous" or "suspicious", explicitly mention the link/button danger in plain language in summary AND next_steps. A clean sender does NOT excuse an unsafe link.
 - If payment/check/equipment/crypto language is present, the summary MUST start with a one-line ⚠️ warning about not sending money.
-- Avoid jargon. Avoid repeating the same sentence in summary and why_it_matters.`;
+- Avoid jargon. Avoid repeating the same sentence in summary and why_it_matters.
+- PLATFORM-ABUSE PHISHING RULE: If signals.legitimateSenderUnsafeCta is true, the framing MUST be "the sender appears authentic, but the action link does not align with the trusted brand destination — this looks like platform-abuse phishing (legitimate infrastructure, unsafe action path)". Do NOT call the brand itself a scam. Do NOT cite generic public scam mentions about the brand as the main risk. The CTA destination IS the risk; describe it that way.
+- BRAND IS NOT THE SCAM: When osintDirectScam mentions a well-known brand but the sender/auth is clean and the CTA points off-domain, treat the brand as a possible IMPERSONATION target, not as the source of fraud. Do not let public scam mentions dominate the summary; lead with the CTA mismatch.
+- "why_it_matters" must explain that passing SPF/DKIM/DMARC does NOT guarantee a safe destination whenever legitimateSenderUnsafeCta is true.`;
 
   const user = JSON.stringify({
     risk_level: input.level,
@@ -4665,6 +4694,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         message: "",
         companyDomain: data.companyDomain,
         senderDomain: domainCheck.senderDomain,
+        ctaUrl: data.ctaUrl,
+        ctaText: data.ctaText,
       });
 
       return {
@@ -4741,6 +4772,8 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       message,
       companyDomain: data.companyDomain,
       senderDomain: domainCheck.senderDomain,
+      ctaUrl: data.ctaUrl,
+      ctaText: data.ctaText,
     });
     const linkSignals = linkIntegritySignals(linkIntegrity);
     score += linkSignals.scoreDelta;
@@ -5127,6 +5160,30 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     // Recompute final level after link signals + floors may have shifted score.
     const finalLevel = levelFor(score);
 
+    // ---- Detect "legitimate sender + unsafe CTA" platform-abuse case ----
+    // Sender/auth look clean (no domain mismatch, headers pass or are absent), but the link/CTA layer is suspicious or worse.
+    const senderClean =
+      (domainCheck.status === "match" ||
+        domainCheck.status === "affiliated" ||
+        domainCheck.status === "subdomain") &&
+      headerAuth.scoreDelta <= 0;
+    const ctaUnsafe =
+      linkIntegrity.link_integrity_status === "dangerous" ||
+      linkIntegrity.link_integrity_status === "suspicious";
+    const legitimateSenderUnsafeCta = senderClean && ctaUnsafe;
+    const ctaProvided = !!(data.ctaUrl && data.ctaUrl.trim());
+
+    // Priority rule: when this is a platform-abuse phishing case, the CTA mismatch
+    // is the real story — push the summary to lead with it and don't let generic
+    // brand-impersonation OSINT mentions dominate.
+    let summaryForFallback = summaryParts.join(" ");
+    if (legitimateSenderUnsafeCta) {
+      summaryForFallback = [
+        "The sender appears authentic, but the action link does not align with the trusted brand destination.",
+        "This may be a platform-abuse phishing scenario: legitimate infrastructure, unsafe action path.",
+      ].join(" ");
+    }
+
     // ---- Central synthesis layer (LLM with deterministic fallback) ----
     const synth = await synthesizeNarrative({
       level: finalLevel,
@@ -5145,10 +5202,16 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         scamFindings: matchedScam.map((m) => m.finding),
         cautionFindings: matchedCaution.map((m) => m.finding),
         positiveFindings: matchedPositive.map((m) => m.finding),
-        osintDirectScam: osint.result.findings.find((f) => /directly describe/i.test(f)),
+        // Suppress generic "brand is a scam" OSINT framing in the platform-abuse case
+        // — the brand is being IMPERSONATED, not committing fraud here.
+        osintDirectScam: legitimateSenderUnsafeCta
+          ? undefined
+          : osint.result.findings.find((f) => /directly describe/i.test(f)),
         paymentRequested: matchedScam.some(
           (s) => s.id === "payment" || s.id === "check_equipment" || s.id === "gift_crypto" || s.id === "sensitive_docs",
         ),
+        legitimateSenderUnsafeCta,
+        ctaProvided,
       },
       modules: {
         rdap: { age: rdap.ageBucket, summary: rdap.ageSummary },
@@ -5162,7 +5225,7 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
         osintFindings: osint.result.findings.slice(0, 6),
       },
       fallback: {
-        summary: summaryParts.join(" "),
+        summary: summaryForFallback,
         why_it_matters,
         next_steps,
       },
