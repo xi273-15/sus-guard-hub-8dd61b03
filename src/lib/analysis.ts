@@ -5115,14 +5115,67 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       }
     }
 
+    // Fold link/CTA integrity signals into findings, why_points, next_steps.
+    linkSignals.whyPoints.forEach((p) => why_points.push(p));
+    linkSignals.findings.forEach((f) => {
+      if (!findings.includes(f)) findings.push(f);
+    });
+    linkSignals.nextSteps.forEach((s) => {
+      if (next_steps.length < 6 && !next_steps.includes(s)) next_steps.push(s);
+    });
+
+    // Recompute final level after link signals + floors may have shifted score.
+    const finalLevel = levelFor(score);
+
+    // ---- Central synthesis layer (LLM with deterministic fallback) ----
+    const synth = await synthesizeNarrative({
+      level: finalLevel,
+      score,
+      context: {
+        recruiterName: data.recruiterName,
+        companyName: data.companyName,
+        companyDomain: data.companyDomain,
+        hasMessage: !!message,
+        hasHeaders: !!(data.headers && data.headers.trim()),
+      },
+      signals: {
+        domainStatus: domainCheck.status,
+        domainFinding: domainCheck.finding,
+        headerSummary: headerAuth.findings.slice(0, 4),
+        scamFindings: matchedScam.map((m) => m.finding),
+        cautionFindings: matchedCaution.map((m) => m.finding),
+        positiveFindings: matchedPositive.map((m) => m.finding),
+        osintDirectScam: osint.result.findings.find((f) => /directly describe/i.test(f)),
+        paymentRequested: matchedScam.some(
+          (s) => s.id === "payment" || s.id === "check_equipment" || s.id === "gift_crypto" || s.id === "sensitive_docs",
+        ),
+      },
+      modules: {
+        rdap: { age: rdap.ageBucket, summary: rdap.ageSummary },
+        dns: { health: dns.health, summary: dns.summary },
+        safeBrowsing: { status: safeBrowsing.safe_browsing_status, summary: safeBrowsing.safe_browsing_summary },
+        ct: { history: ct.history, summary: ct.summary },
+        wayback: { status: wayback.archive_history_status, summary: wayback.website_history_summary },
+        recruiterLocation: { mismatch: recruiterLocation.mismatch, summary: recruiterLocation.summary },
+        websiteTraffic: { mismatch: websiteTraffic.geo_mismatch, summary: websiteTraffic.estimated_visibility_summary },
+        linkIntegrity: { status: linkIntegrity.link_integrity_status, summary: linkIntegrity.link_summary },
+        osintFindings: osint.result.findings.slice(0, 6),
+      },
+      fallback: {
+        summary: summaryParts.join(" "),
+        why_it_matters,
+        next_steps,
+      },
+    });
+
     return {
       risk_score: score,
-      risk_level: level,
+      risk_level: finalLevel,
       findings,
-      why_it_matters,
+      why_it_matters: synth.why_it_matters || why_it_matters,
       why_points,
-      next_steps,
-      audio_summary: summaryParts.join(" "),
+      next_steps: synth.next_steps.length ? synth.next_steps : next_steps,
+      audio_summary: synth.summary || summaryParts.join(" "),
       osint_summary: osint.result.summary,
       osint_findings: osint.result.findings,
       osint_links: osint.result.links,
@@ -5134,5 +5187,6 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
       recruiter_location: recruiterLocation,
       website_traffic: websiteTraffic,
       recruiter_identity: recruiterIdentity,
+      link_integrity: linkIntegrity,
     };
   });
