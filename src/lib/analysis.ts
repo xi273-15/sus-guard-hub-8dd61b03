@@ -3957,7 +3957,12 @@ export function analyzeLinkIntegrity(input: {
   let summary = "";
   const hasDangerous = findings.some((f) => f.status === "dangerous" || f.status === "masked");
   const trustedActionMismatch = findings.some(
-    (f) => f.status === "off_domain" && hasTrustedActionWording(f.visible_text),
+    (f) =>
+      f.status === "off_domain" &&
+      (hasTrustedActionWording(f.visible_text) || /platform-abuse phishing pattern/.test(f.note)),
+  );
+  const explicitCtaMismatch = findings.some(
+    (f) => f.status === "off_domain" && /platform-abuse phishing pattern/.test(f.note),
   );
   const hasOffDomain = findings.some((f) => f.status === "off_domain");
   const hasShortener = findings.some((f) => f.status === "shortener");
@@ -3967,9 +3972,11 @@ export function analyzeLinkIntegrity(input: {
 
   if (hasDangerous || trustedActionMismatch) {
     status = "dangerous";
-    summary = trustedActionMismatch
-      ? "A button looks like a normal company action but actually points somewhere else — a classic phishing pattern."
-      : "One or more links use dangerous patterns (raw IP, javascript/data URL, punycode, or hidden user prefix).";
+    summary = explicitCtaMismatch
+      ? "The action button you flagged points outside the claimed company's domain — the sender may be legitimate, but the destination is not."
+      : trustedActionMismatch
+        ? "A button looks like a normal company action but actually points somewhere else — a classic phishing pattern."
+        : "One or more links use dangerous patterns (raw IP, javascript/data URL, punycode, or hidden user prefix).";
   } else if (hasOffDomain || hasUntrustedRedirect) {
     status = "suspicious";
     summary = "Some links point outside the claimed company's domain. Verify the destination before clicking.";
