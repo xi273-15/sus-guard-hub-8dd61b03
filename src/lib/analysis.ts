@@ -4182,7 +4182,10 @@ HARD RULES:
 - NEVER contradict the risk level. NEVER say "low risk" if level is High or Likely Scam.
 - If link_integrity status is "dangerous" or "suspicious", explicitly mention the link/button danger in plain language in summary AND next_steps. A clean sender does NOT excuse an unsafe link.
 - If payment/check/equipment/crypto language is present, the summary MUST start with a one-line ⚠️ warning about not sending money.
-- Avoid jargon. Avoid repeating the same sentence in summary and why_it_matters.`;
+- Avoid jargon. Avoid repeating the same sentence in summary and why_it_matters.
+- PLATFORM-ABUSE PHISHING RULE: If signals.legitimateSenderUnsafeCta is true, the framing MUST be "the sender appears authentic, but the action link does not align with the trusted brand destination — this looks like platform-abuse phishing (legitimate infrastructure, unsafe action path)". Do NOT call the brand itself a scam. Do NOT cite generic public scam mentions about the brand as the main risk. The CTA destination IS the risk; describe it that way.
+- BRAND IS NOT THE SCAM: When osintDirectScam mentions a well-known brand but the sender/auth is clean and the CTA points off-domain, treat the brand as a possible IMPERSONATION target, not as the source of fraud. Do not let public scam mentions dominate the summary; lead with the CTA mismatch.
+- "why_it_matters" must explain that passing SPF/DKIM/DMARC does NOT guarantee a safe destination whenever legitimateSenderUnsafeCta is true.`;
 
   const user = JSON.stringify({
     risk_level: input.level,
