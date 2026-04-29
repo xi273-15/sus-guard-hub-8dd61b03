@@ -1008,6 +1008,66 @@ function RdapField({ label, value, mono }: { label: string; value: string; mono?
   );
 }
 
+function LinkIntegrityCardBody({ li }: { li: LinkIntegrityResult }) {
+  const statusLabel: Record<LinkIntegrityResult["link_integrity_status"], string> = {
+    clean: "All links look safe",
+    minor: "Minor caution",
+    suspicious: "Suspicious",
+    dangerous: "Dangerous",
+    unknown: "Not analyzed",
+  };
+  const statusTone: Record<LinkIntegrityResult["link_integrity_status"], string> = {
+    clean: "text-emerald-500",
+    minor: "text-amber-500",
+    suspicious: "text-orange-500",
+    dangerous: "text-rose-500",
+    unknown: "text-muted-foreground",
+  };
+  const dotTone: Record<string, string> = {
+    trusted: "bg-emerald-400",
+    neutral: "bg-muted-foreground",
+    off_domain: "bg-orange-400",
+    shortener: "bg-amber-400",
+    redirect: "bg-amber-400",
+    masked: "bg-rose-500",
+    dangerous: "bg-rose-500",
+  };
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 text-sm">
+        <span className="text-muted-foreground">Status:</span>
+        <span className={`font-medium ${statusTone[li.link_integrity_status]}`}>
+          {statusLabel[li.link_integrity_status]}
+        </span>
+      </div>
+      <p className="text-sm leading-relaxed text-foreground/90">{li.link_summary}</p>
+      {li.link_findings.length > 0 && (
+        <ul className="space-y-2">
+          {li.link_findings.slice(0, 8).map((f, i) => (
+            <li key={i} className="flex gap-2 text-sm leading-relaxed">
+              <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dotTone[f.status] ?? "bg-muted-foreground"}`} />
+              <span className="min-w-0">
+                {f.visible_text && (
+                  <span className="font-medium text-foreground">"{f.visible_text}"</span>
+                )}{" "}
+                <span className="font-mono text-xs text-muted-foreground">→ {f.host}</span>
+                <span className="block text-muted-foreground">{f.note}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {li.link_redirect_notes.length > 0 && (
+        <div className="rounded-md border border-border/60 bg-background/40 p-3 text-xs text-muted-foreground">
+          {li.link_redirect_notes.map((n, i) => (
+            <p key={i}>{n}</p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DnsCardBody({ dns }: { dns: DnsResult }) {
   if (!dns.available) {
     return (
