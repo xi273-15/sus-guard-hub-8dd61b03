@@ -4736,6 +4736,16 @@ export const analyzeRecruiter = createServerFn({ method: "POST" })
     score += ctLookup.scoreDelta;
     score += waybackLookup.scoreDelta;
 
+    // ---- Link / CTA integrity (heuristic, no network) ----
+    const linkIntegrity = analyzeLinkIntegrity({
+      message,
+      companyDomain: data.companyDomain,
+      senderDomain: domainCheck.senderDomain,
+    });
+    const linkSignals = linkIntegritySignals(linkIntegrity);
+    score += linkSignals.scoreDelta;
+    if (linkSignals.floor > 0) score = Math.max(score, linkSignals.floor);
+
     // ---- Combo bonuses for payment-related scam patterns ----
     // Payment/fee/check/crypto language combined with other scam patterns is
     // among the strongest signals in the system. Boost meaningfully.
