@@ -9,6 +9,10 @@ export type AnalysisInput = {
   headers?: string;
   /** Optional claimed job/role location, e.g. "Berlin", "Remote-EU", "San Francisco". */
   roleLocation?: string;
+  /** Optional: the actual destination URL of the email's main button/CTA (right-click → Copy link address). */
+  ctaUrl?: string;
+  /** Optional: the visible text on the button/CTA (e.g. "Verify account", "View role"). */
+  ctaText?: string;
 };
 
 export type RiskLevel = "Low" | "Caution" | "High" | "Likely Scam";
