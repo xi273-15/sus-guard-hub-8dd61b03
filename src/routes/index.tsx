@@ -84,6 +84,8 @@ type FormState = {
   roleLocation: string;
   message: string;
   headers: string;
+  ctaText: string;
+  ctaUrl: string;
 };
 
 const initialForm: FormState = {
@@ -94,6 +96,8 @@ const initialForm: FormState = {
   roleLocation: "",
   message: "",
   headers: "",
+  ctaText: "",
+  ctaUrl: "",
 };
 
 function riskLevelClasses(level: AnalysisResult["risk_level"]) {
